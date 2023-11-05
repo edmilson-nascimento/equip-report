@@ -369,35 +369,44 @@ CLASS class_report IMPLEMENTATION .
 
     ex_data = VALUE #(
       ( program  = 'SAPMIEQ0'
-        dynpro   = '0101'
+        dynpro   = '0100'
         dynbegin = 'X' )
       ( fnam     = '/00'
         fval     = 'BDC_OKCODE' )
       ( fnam     = 'RM63E-EQUNR'
         fval     = CONV #( |{ im_equi ALPHA = OUT }| ) )
 
+      ( program  = 'SAPMIEQ0'
+        dynpro   = '0101'
+        dynbegin = 'X' )
       ( fnam     = '=MV'
         fval     = 'BDC_OKCODE' )
 
       ( program  = 'SAPMIEQ0'
         dynpro   = '1800'
         dynbegin = 'X' )
-
       ( fnam     = '=MVA'
         fval     = 'BDC_OKCODE' )
-
       ( fnam     = 'RISA0-V_OF_STOCK'
         fval     = 'X' )
 
-      ( fnam     = 'X'
-        fval     = '' )
-
-      ( fnam     = '=MVA'
+      ( program  = 'SAPMIEQ0'
+        dynpro   = '0101'
+        dynbegin = 'X' )
+      ( fnam     = '=MV'
         fval     = 'BDC_OKCODE' )
 
-      ( fnam     = 'X'
-        fval     = 'RISA0-V_TO_STOCK' )
+      ( program  = 'SAPMIEQ0'
+        dynpro   = '1800'
+        dynbegin = 'X' )
+      ( fnam     = '=MVA'
+        fval     = 'BDC_OKCODE' )
+      ( fnam     = 'RISA0-V_TO_STOCK'
+        fval     = 'X' )
 
+      ( program  = 'SAPMIEQ0'
+        dynpro   = '0101'
+        dynbegin = 'X' )
       ( fnam     = '=BU'
         fval     = 'BDC_OKCODE' )
 
@@ -409,11 +418,37 @@ CLASS class_report IMPLEMENTATION .
 
   METHOD process_shdb .
 
+    CONSTANTS:
+      lc_exibir_telas TYPE ctu_mode   VALUE 'A',
+      lc_background   TYPE ctu_mode   VALUE 'N',
+      lc_assincrono   TYPE ctu_update VALUE 'A',
+      lc_sincrono     TYPE ctu_update VALUE 'S'.
+
+    DATA:
+      dismode    TYPE ctu_params-dismode VALUE 'A',
+      updmode    TYPE ctu_params-updmode VALUE 'A',
+      lt_message TYPE tab_bdcmsgcoll.
+
     CLEAR ex_return .
 
     IF ( im_data IS INITIAL ).
       RETURN .
     ENDIF .
+
+    DATA(ls_options) = VALUE ctu_params(
+      dismode  = dismode
+      updmode  = updmode
+      cattmode = abap_off
+      defsize  = abap_off
+      racommit = abap_off
+      nobinpt  = abap_on
+      nobiend  = abap_off
+    ) .
+
+    CALL TRANSACTION 'IE02'
+               USING im_data
+             OPTIONS FROM ls_options
+            MESSAGES INTO lt_message .
 
   ENDMETHOD .
 
