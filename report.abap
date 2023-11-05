@@ -216,15 +216,23 @@ CLASS class_report IMPLEMENTATION .
 
   METHOD progress .
 
+    DATA:
+      percentage TYPE i .
+
+    " Não sera exibido quando for em background
+    IF ( sy-batch EQ abap_true ) .
+      RETURN .
+    ENDIF .
+
     IF ( percent IS INITIAL ) AND
        ( ( total IS INITIAL ) AND currency IS INITIAL ) .
       RETURN .
     ENDIF .
 
     IF ( percent IS NOT INITIAL ) .
-      DATA(percentage) = percent .
+      percentage = percent .
     ELSE .
-      percentage = 10 .
+      percentage = ( total / currency ) .
     ENDIF .
 
     CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
@@ -236,8 +244,6 @@ CLASS class_report IMPLEMENTATION .
 
 
   METHOD on_user_command .
-
-    BREAK ex135415 .
 
     CASE e_salv_function .
 
@@ -306,7 +312,21 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
+    me->progress( EXPORTING percent  = 10
+                            message  = 'Processandos Equipamentos...'
+    ).
+
     LOOP AT me->gt_outtab ASSIGNING FIELD-SYMBOL(<fs_data>).
+
+      DATA(lv_message) = CONV char50( |Processando { sy-tabix }| ) .
+      lv_message = |{ lv_message } de { lines( me->gt_outtab ) }...| .
+
+      me->progress(
+        EXPORTING
+          total    = lines( me->gt_outtab )
+          currency = sy-tabix
+          message  = lv_message
+      ).
 
       me->create_shdb(
         EXPORTING
@@ -326,9 +346,24 @@ CLASS class_report IMPLEMENTATION .
           ex_return = lt_return
       ).
 
-      lt_return = VALUE #( ( LINES OF lt_return ) ) .
+      IF ( NOT line_exists( lt_return[ type = if_xo_const_message=>error ] ) ) .
+        APPEND VALUE bapiret2(
+          type       = if_xo_const_message=>success
+          id         = 'IS'
+          number     = 817
+          message_v1 = CONV #( |{ <fs_data>-equnr ALPHA = OUT }| ) )
+        TO lt_return .
+      ELSE .
+        lt_return = VALUE #( ( LINES OF lt_return ) ) .
+      ENDIF .
 
     ENDLOOP .
+
+    IF ( lines( lt_return ) GT 0 ) .
+      CALL FUNCTION 'FINB_BAPIRET2_DISPLAY'
+        EXPORTING
+          it_message = lt_return. " BAPI Return Table
+    ENDIF .
 
   ENDMETHOD .
 
@@ -341,92 +376,60 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-*          REFRESH up_bdc.
-*          CLEAR up_bdc.
-*          up_bdc-program  = 'SAPMFDTA'.
-*          up_bdc-dynpro   = '100'.
-*          up_bdc-dynbegin = 'X'.
-*          APPEND up_bdc.
-*          CLEAR up_bdc.
-*          up_bdc-fnam     = 'REGUT-RENUM'.
-*          up_bdc-fval     = tab_ausgabe-renum.
-*          APPEND up_bdc.
-*          CLEAR up_bdc.
-*          up_bdc-fval     = '/8'.
-*          up_bdc-fnam     = 'BDC_OKCODE'.
-*          APPEND up_bdc.
-*          CLEAR up_bdc.
-*          up_bdc-program  = 'SAPMFDTA'.
-*          up_bdc-dynpro   = '200'.
-*          up_bdc-dynbegin = 'X'.
-*          APPEND up_bdc.
-*          CLEAR up_bdc.
-*          up_bdc-fval     = '/BDA'.
-*          up_bdc-fnam     = 'BDC_OKCODE'.
-*          APPEND up_bdc.
-*          CALL TRANSACTION up_fdta USING up_bdc MODE 'E'.
-
-
     ex_data = VALUE #(
       ( program  = 'SAPMIEQ0'
         dynpro   = '0100'
         dynbegin = 'X' )
-      ( fnam     = '/00'
-        fval     = 'BDC_OKCODE' )
       ( fnam     = 'RM63E-EQUNR'
         fval     = CONV #( |{ im_equi ALPHA = OUT }| ) )
+      ( fnam     = 'BDC_OKCODE'
+        fval     = '/00' )
 
       ( program  = 'SAPMIEQ0'
         dynpro   = '0101'
         dynbegin = 'X' )
-      ( fnam     = '=MV'
-        fval     = 'BDC_OKCODE' )
+      ( fnam     = 'BDC_OKCODE'
+        fval     = '=MV' )
 
       ( program  = 'SAPMIEQ0'
         dynpro   = '1800'
         dynbegin = 'X' )
-      ( fnam     = '=MVA'
-        fval     = 'BDC_OKCODE' )
+      ( fnam     = 'BDC_OKCODE'
+        fval     = '=MVA' )
       ( fnam     = 'RISA0-V_OF_STOCK'
         fval     = 'X' )
 
       ( program  = 'SAPMIEQ0'
         dynpro   = '0101'
         dynbegin = 'X' )
-      ( fnam     = '=MV'
-        fval     = 'BDC_OKCODE' )
+      ( fnam     = 'BDC_OKCODE'
+        fval     = '=MV' )
 
       ( program  = 'SAPMIEQ0'
         dynpro   = '1800'
         dynbegin = 'X' )
-      ( fnam     = '=MVA'
-        fval     = 'BDC_OKCODE' )
+      ( fnam     = 'BDC_OKCODE'
+        fval     = '=MVA' )
       ( fnam     = 'RISA0-V_TO_STOCK'
         fval     = 'X' )
 
       ( program  = 'SAPMIEQ0'
         dynpro   = '0101'
         dynbegin = 'X' )
-      ( fnam     = '=BU'
-        fval     = 'BDC_OKCODE' )
-
+      ( fnam     = 'BDC_OKCODE'
+        fval     = '=BU' )
     ).
-
 
   ENDMETHOD .
 
 
   METHOD process_shdb .
 
-    CONSTANTS:
-      lc_exibir_telas TYPE ctu_mode   VALUE 'A',
-      lc_background   TYPE ctu_mode   VALUE 'N',
-      lc_assincrono   TYPE ctu_update VALUE 'A',
-      lc_sincrono     TYPE ctu_update VALUE 'S'.
-
     DATA:
-      dismode    TYPE ctu_params-dismode VALUE 'A',
-      updmode    TYPE ctu_params-updmode VALUE 'A',
+*     dismode    TYPE ctu_params-dismode VALUE 'A', "Exibir telas
+      dismode    TYPE ctu_params-dismode VALUE 'N', "Background
+*     updmode    TYPE ctu_params-updmode VALUE 'S', "Sincrono
+      updmode    TYPE ctu_params-updmode VALUE 'A', "Assincrono
       lt_message TYPE tab_bdcmsgcoll.
 
     CLEAR ex_return .
