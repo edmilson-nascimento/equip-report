@@ -17,13 +17,10 @@ CLASS class_report DEFINITION .
     METHODS constructor
       IMPORTING
         !im_equi TYPE range_t_equnr .
-
     "! <p class="shorttext synchronized" lang="pt">Busca dados de equipamentos</p>
     METHODS get_data .
-
     "! <p class="shorttext synchronized" lang="pt">Exibe dados encontrados</p>
     METHODS show .
-
     "! <p class="shorttext synchronized" lang="pt">Exibe status de processamento</p>
     METHODS progress
       IMPORTING
@@ -47,37 +44,33 @@ CLASS class_report DEFINITION .
       tab_out TYPE TABLE OF ty_out.
 
     DATA:
-      salv_table TYPE REF TO cl_salv_table,
-      gt_equi    TYPE range_t_equnr,
-      gt_outtab  TYPE tab_out.
+      salv_table  TYPE REF TO cl_salv_table,
+      gt_equi     TYPE range_t_equnr,
+      gt_messages TYPE bapiret2_t,
+      gt_outtab   TYPE tab_out.
 
     "! <p class="shorttext synchronized" lang="pt">Mantem processamento apos ALV exibido</p>
     METHODS on_user_command
                 FOR EVENT added_function OF cl_salv_events
       IMPORTING e_salv_function.
-
     "! <p class="shorttext synchronized" lang="pt">Retorna TRUE para confirmação</p>
     METHODS confirm
       RETURNING
         VALUE(rv_result) TYPE sap_bool .
-
     "! <p class="shorttext synchronized" lang="pt">Preenche dados de SHDB para processamento</p>
     METHODS create_shdb
       IMPORTING
         !im_equi TYPE equi-equnr
       EXPORTING
         ex_data  TYPE tab_bdcdata .
-
     "! <p class="shorttext synchronized" lang="pt">Executa o processamento dos itens listados</p>
     METHODS process .
-
     "! <p class="shorttext synchronized" lang="pt">Preenche dados de SHDB para processamento</p>
     METHODS process_shdb
       IMPORTING
         !im_data  TYPE tab_bdcdata
       EXPORTING
         ex_return TYPE bapiret2_t .
-
 
 ENDCLASS .
 
@@ -232,7 +225,7 @@ CLASS class_report IMPLEMENTATION .
     IF ( percent IS NOT INITIAL ) .
       percentage = percent .
     ELSE .
-      percentage = ( total / currency ) .
+      percentage = ( currency * 100 ) / total.
     ENDIF .
 
     CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
@@ -250,6 +243,8 @@ CLASS class_report IMPLEMENTATION .
       WHEN 'RUN' .
         IF ( me->confirm( ) EQ abap_true ) .
           me->process( ) .
+          me->get_data( ) .
+          me->salv_table->refresh( ) .
         ENDIF .
 
       WHEN OTHERS .
@@ -308,6 +303,8 @@ CLASS class_report IMPLEMENTATION .
     DATA:
       lt_return TYPE bapiret2_t .
 
+    CLEAR me->gt_messages .
+
     IF ( lines( me->gt_outtab ) EQ 0 ) .
       RETURN .
     ENDIF .
@@ -352,17 +349,17 @@ CLASS class_report IMPLEMENTATION .
           id         = 'IS'
           number     = 817
           message_v1 = CONV #( |{ <fs_data>-equnr ALPHA = OUT }| ) )
-        TO lt_return .
+        TO me->gt_messages .
       ELSE .
-        lt_return = VALUE #( ( LINES OF lt_return ) ) .
+        me->gt_messages = VALUE #( BASE me->gt_messages ( LINES OF lt_return ) ) .
       ENDIF .
 
     ENDLOOP .
 
-    IF ( lines( lt_return ) GT 0 ) .
+    IF ( lines( me->gt_messages ) GT 0 ) .
       CALL FUNCTION 'FINB_BAPIRET2_DISPLAY'
         EXPORTING
-          it_message = lt_return. " BAPI Return Table
+          it_message = me->gt_messages. " BAPI Return Table
     ENDIF .
 
   ENDMETHOD .
