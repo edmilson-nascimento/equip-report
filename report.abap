@@ -25,7 +25,7 @@ CLASS class_report DEFINITION .
     METHODS show .
 
     "! <p class="shorttext synchronized" lang="pt">Exibe status de processamento</p>
-    METHODS process
+    METHODS progress
       IMPORTING
         !percent  TYPE i OPTIONAL
         !total    TYPE i OPTIONAL
@@ -68,6 +68,9 @@ CLASS class_report DEFINITION .
       EXPORTING
         ex_data  TYPE tab_bdcdata .
 
+    "! <p class="shorttext synchronized" lang="pt">Executa o processamento dos itens listados</p>
+    METHODS process .
+
     "! <p class="shorttext synchronized" lang="pt">Preenche dados de SHDB para processamento</p>
     METHODS process_shdb
       IMPORTING
@@ -100,7 +103,7 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-    me->process(
+    me->progress(
       EXPORTING percent  = 10
                 message  = 'Buscando dados de Equipamento...' ) .
 
@@ -211,7 +214,7 @@ CLASS class_report IMPLEMENTATION .
   ENDMETHOD .
 
 
-  METHOD process .
+  METHOD progress .
 
     IF ( percent IS INITIAL ) AND
        ( ( total IS INITIAL ) AND currency IS INITIAL ) .
@@ -237,7 +240,11 @@ CLASS class_report IMPLEMENTATION .
     BREAK ex135415 .
 
     CASE e_salv_function .
-      WHEN '' .
+
+      WHEN 'RUN' .
+        IF ( me->confirm( ) EQ abap_true ) .
+          me->process( ) .
+        ENDIF .
 
       WHEN OTHERS .
 
@@ -249,16 +256,16 @@ CLASS class_report IMPLEMENTATION .
   METHOD confirm .
 
     CONSTANTS:
-      lc_sim TYPE char1 VALUE '' .
+      lc_sim TYPE char1 VALUE '1' .
 
     DATA:
       answer TYPE char1 .
 
     CALL FUNCTION 'POPUP_TO_CONFIRM'
       EXPORTING
-        titlebar              = 'Confirmação'            " Title of dialog box
+        titlebar              = TEXT-000         " Title of dialog box
 *       diagnose_object       = space            " Diagnosis text (maintain via SE61)
-        text_question         = 'Tem certeza que deseja processar todos os itens listados?'                 " Question text in dialog box
+        text_question         = TEXT-c00         " Question text in dialog box
         text_button_1         = TEXT-c01         " Text on the first pushbutton
 *       icon_button_1         = space            " Icon on first pushbutton
         text_button_2         = TEXT-c02         " Text on the second pushbutton
@@ -286,6 +293,42 @@ CLASS class_report IMPLEMENTATION .
       rv_result = abap_off .
     ENDIF .
 
+
+  ENDMETHOD .
+
+
+  METHOD process .
+
+    DATA:
+      lt_return TYPE bapiret2_t .
+
+    IF ( lines( me->gt_outtab ) EQ 0 ) .
+      RETURN .
+    ENDIF .
+
+    LOOP AT me->gt_outtab ASSIGNING FIELD-SYMBOL(<fs_data>).
+
+      me->create_shdb(
+        EXPORTING
+          im_equi = <fs_data>-equnr
+        IMPORTING
+          ex_data = DATA(lt_data)
+      ).
+
+      IF ( lines( lt_data ) EQ 0 ) .
+        CONTINUE .
+      ENDIF .
+
+      me->process_shdb(
+        EXPORTING
+          im_data   = lt_data
+        IMPORTING
+          ex_return = lt_return
+      ).
+
+      lt_return = VALUE #( ( LINES OF lt_return ) ) .
+
+    ENDLOOP .
 
   ENDMETHOD .
 
