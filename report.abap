@@ -440,7 +440,7 @@ CLASS class_report IMPLEMENTATION .
       updmode  = updmode
       cattmode = abap_off
       defsize  = abap_off
-      racommit = abap_off
+      racommit = abap_on
       nobinpt  = abap_on
       nobiend  = abap_off
     ) .
