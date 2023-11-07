@@ -25,7 +25,8 @@ CLASS class_report DEFINITION .
     METHODS constructor
       IMPORTING
         !im_equi TYPE range_t_equnr
-        !im_stat TYPE dpr_tt_status_range .
+        !im_lidi TYPE tj02t-istat
+        !im_deps TYPE tj02t-istat .
     "! <p class="shorttext synchronized" lang="pt">Busca dados de equipamentos</p>
     METHODS get_data .
     "! <p class="shorttext synchronized" lang="pt">Retorna TRUE caso existam dados para exibição/processamento</p>
@@ -59,7 +60,8 @@ CLASS class_report DEFINITION .
     DATA:
       salv_table  TYPE REF TO cl_salv_table,
       gt_equi     TYPE range_t_equnr,
-      gt_stat     TYPE dpr_tt_status_range,
+      gv_lidi     TYPE tj02t-istat,
+      gv_deps     TYPE tj02t-istat,
       gt_messages TYPE bapiret2_t,
       gt_outtab   TYPE tab_out.
 
@@ -133,7 +135,8 @@ CLASS class_report IMPLEMENTATION .
     ENDIF .
 
     me->gt_equi = im_equi .
-    me->gt_stat = im_stat .
+    me->gv_lidi = im_lidi .
+    me->gv_deps = im_deps .
 
   ENDMETHOD .
 
@@ -168,9 +171,6 @@ CLASS class_report IMPLEMENTATION .
        FOR ALL ENTRIES IN @lt_data
      WHERE equnr EQ @lt_data-equnr
        AND spras EQ @sy-langu .
-    IF ( sy-subrc NE 0 ) .
-      RETURN .
-    ENDIF .
 
     me->progress(
       EXPORTING percent  = 70
@@ -190,11 +190,6 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-    " Verificar se o equipamento tem ao menos um dos status da
-    " tela de seleção / de acordo com os criterios
-    DATA(lt_status_check) = lt_status .
-    DELETE lt_status_check WHERE stat NOT IN me->gt_stat .
-
     me->progress(
       EXPORTING percent  = 85
                 message  = 'Processando Status de Equipamentos...' ) .
@@ -202,18 +197,15 @@ CLASS class_report IMPLEMENTATION .
     " Informando status
     LOOP AT lt_data ASSIGNING FIELD-SYMBOL(<fs_data>).
 
-      ASSIGN lt_desc[ equnr = <fs_data>-equnr ] TO FIELD-SYMBOL(<fs_desc>) .
-      IF ( <fs_desc> IS NOT ASSIGNED ) .
-        CONTINUE .
-      ENDIF .
+      DATA(description) = VALUE #( lt_desc[ equnr = <fs_data>-equnr ] OPTIONAL ) .
 
       " Aplicando filtor por status
-      DATA(current) = VALUE #( lt_status_check[ objnr = <fs_data>-objnr ]-stat OPTIONAL ) .
-      IF ( current IS INITIAL ) .
-        CONTINUE .
-      ENDIF .
-
-      IF ( NOT line_exists( me->gt_stat[ low = current ] ) ) .
+      IF ( line_exists( lt_status[ objnr = <fs_data>-objnr
+                                   stat  = me->gv_lidi ] ) )
+         AND
+        ( line_exists( lt_status[ objnr = <fs_data>-objnr
+                                   stat  = me->gv_deps ] ) ) .
+      ELSE .
         CONTINUE .
       ENDIF .
 
@@ -226,13 +218,14 @@ CLASS class_report IMPLEMENTATION .
                               ELSE |{ s } / { l-txt04 }| ) ) .
 
       APPEND VALUE #( equnr = <fs_data>-equnr
-                      spras = <fs_desc>-spras
-                      eqktx = <fs_desc>-eqktx
-                      eqktu = <fs_desc>-eqktu
+                      spras = description-spras
+                      eqktx = description-eqktx
+                      eqktu = description-eqktu
                       sttxt = current_sttxt )
           TO me->gt_outtab .
 
-      UNASSIGN <fs_desc> .
+      CLEAR:
+        description, current_sttxt .
 
     ENDLOOP .
 
@@ -575,10 +568,8 @@ START-OF-SELECTION .
 
   DATA(obj) =
     NEW class_report( im_equi = s_equnr[]
-                      im_stat = VALUE #( sign   = rsmds_c_sign-including
-                                         option = rsmds_c_option-equal
-                                          ( low = class_report=>get_stat( p_lidi ) )
-                                          ( low = class_report=>get_stat( p_deps ) ) ) ) .
+                      im_lidi = class_report=>get_stat( p_lidi )
+                      im_deps = class_report=>get_stat( p_deps ) ) .
   IF ( obj IS BOUND ) .
     obj->get_data( ) .
   ENDIF.
