@@ -13,12 +13,25 @@ CLASS class_report DEFINITION .
 
   PUBLIC SECTION .
 
+    "! <p class="shorttext synchronized" lang="pt">Configuraçoes iniciais</p>
+    CLASS-METHODS initial .
+    "! <p class="shorttext synchronized" lang="pt">Convert status para o valor interno</p>
+    CLASS-METHODS get_stat
+      IMPORTING
+        !im_stat         TYPE tj02t-txt04
+      RETURNING
+        VALUE(rv_result) TYPE tj02t-istat .
     "! <p class="shorttext synchronized" lang="pt">Metodo construtor</p>
     METHODS constructor
       IMPORTING
-        !im_equi TYPE range_t_equnr .
+        !im_equi TYPE range_t_equnr
+        !im_stat TYPE dpr_tt_status_range .
     "! <p class="shorttext synchronized" lang="pt">Busca dados de equipamentos</p>
     METHODS get_data .
+    "! <p class="shorttext synchronized" lang="pt">Retorna TRUE caso existam dados para exibição/processamento</p>
+    METHODS has_data
+      RETURNING
+        VALUE(rv_result) TYPE sap_bool .
     "! <p class="shorttext synchronized" lang="pt">Exibe dados encontrados</p>
     METHODS show .
     "! <p class="shorttext synchronized" lang="pt">Exibe status de processamento</p>
@@ -46,6 +59,7 @@ CLASS class_report DEFINITION .
     DATA:
       salv_table  TYPE REF TO cl_salv_table,
       gt_equi     TYPE range_t_equnr,
+      gt_stat     TYPE dpr_tt_status_range,
       gt_messages TYPE bapiret2_t,
       gt_outtab   TYPE tab_out.
 
@@ -78,6 +92,40 @@ ENDCLASS .
 CLASS class_report IMPLEMENTATION .
 
 
+  METHOD initial .
+
+    LOOP AT SCREEN .
+      IF ( screen-group1 EQ 'P1' ) .
+        screen-input = 0 .
+        MODIFY SCREEN .
+      ENDIF .
+    ENDLOOP.
+
+
+  ENDMETHOD .
+
+
+  METHOD get_stat .
+
+    IF ( im_stat IS INITIAL ) .
+      RETURN .
+    ENDIF .
+
+    SELECT istat, spras, txt04
+     UP TO 1 ROWS
+      FROM tj02t
+      INTO @DATA(ls_data)
+     WHERE spras EQ @sy-langu
+       AND txt04 EQ @im_stat .
+    ENDSELECT .
+
+    rv_result = COND #( WHEN sy-subrc EQ 0
+                        THEN ls_data-istat
+                        ELSE space ) .
+
+  ENDMETHOD .
+
+
   METHOD constructor .
 
     IF ( lines( im_equi ) EQ 0 ) .
@@ -85,8 +133,10 @@ CLASS class_report IMPLEMENTATION .
     ENDIF .
 
     me->gt_equi = im_equi .
+    me->gt_stat = im_stat .
 
   ENDMETHOD .
+
 
   METHOD get_data .
 
@@ -98,7 +148,7 @@ CLASS class_report IMPLEMENTATION .
 
     me->progress(
       EXPORTING percent  = 10
-                message  = 'Buscando dados de Equipamento...' ) .
+                message  = 'Buscando dados de Equipamentos...' ) .
 
     SELECT equnr, objnr
       FROM equi
@@ -108,15 +158,23 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
+    me->progress(
+      EXPORTING percent  = 45
+                message  = 'Buscando descrição de Equipamentos...' ) .
+
     SELECT equnr, spras, eqktx, eqktu
       FROM eqkt
-      INTO TABLE @me->gt_outtab
+      INTO TABLE @DATA(lt_desc)
        FOR ALL ENTRIES IN @lt_data
      WHERE equnr EQ @lt_data-equnr
        AND spras EQ @sy-langu .
     IF ( sy-subrc NE 0 ) .
       RETURN .
     ENDIF .
+
+    me->progress(
+      EXPORTING percent  = 70
+                message  = 'Buscando Status de Equipamentos...' ) .
 
     SELECT j~objnr, j~stat, j~inact,
            t~istat, t~spras, t~txt04
@@ -128,27 +186,66 @@ CLASS class_report IMPLEMENTATION .
      WHERE j~objnr EQ @lt_data-objnr
        AND j~inact EQ @abap_false
        AND t~spras EQ @sy-langu .
+    IF ( sy-subrc NE 0 ) .
+      RETURN .
+    ENDIF .
+
+    " Verificar se o equipamento tem ao menos um dos status da
+    " tela de seleção / de acordo com os criterios
+    DATA(lt_status_check) = lt_status .
+    DELETE lt_status_check WHERE stat NOT IN me->gt_stat .
+
+    me->progress(
+      EXPORTING percent  = 85
+                message  = 'Processando Status de Equipamentos...' ) .
 
     " Informando status
     LOOP AT lt_data ASSIGNING FIELD-SYMBOL(<fs_data>).
 
-      ASSIGN me->gt_outtab[ equnr = <fs_data>-equnr ] TO FIELD-SYMBOL(<fs_out>) .
-      IF ( <fs_out> IS NOT ASSIGNED ) .
+      ASSIGN lt_desc[ equnr = <fs_data>-equnr ] TO FIELD-SYMBOL(<fs_desc>) .
+      IF ( <fs_desc> IS NOT ASSIGNED ) .
         CONTINUE .
       ENDIF .
 
-      <fs_out>-sttxt = REDUCE #( INIT s   TYPE string
-                                  FOR l IN lt_status
-                                WHERE ( objnr = <fs_data>-objnr )
-                                 NEXT s = COND string(
-                                            WHEN s = '' THEN l-txt04
-                                            ELSE |{ s } / { l-txt04 }| ) ) .
+      " Aplicando filtor por status
+      DATA(current) = VALUE #( lt_status_check[ objnr = <fs_data>-objnr ]-stat OPTIONAL ) .
+      IF ( current IS INITIAL ) .
+        CONTINUE .
+      ENDIF .
 
+      IF ( NOT line_exists( me->gt_stat[ low = current ] ) ) .
+        CONTINUE .
+      ENDIF .
 
+      DATA(current_sttxt) = REDUCE itobattr-sttxt(
+        INIT s   TYPE string
+         FOR l IN lt_status
+       WHERE ( objnr = <fs_data>-objnr )
+        NEXT s = COND string( WHEN s = ''
+                              THEN l-txt04
+                              ELSE |{ s } / { l-txt04 }| ) ) .
 
-      UNASSIGN <fs_out> .
+      APPEND VALUE #( equnr = <fs_data>-equnr
+                      spras = <fs_desc>-spras
+                      eqktx = <fs_desc>-eqktx
+                      eqktu = <fs_desc>-eqktu
+                      sttxt = current_sttxt )
+          TO me->gt_outtab .
+
+      UNASSIGN <fs_desc> .
 
     ENDLOOP .
+
+  ENDMETHOD .
+
+
+  METHOD has_data .
+
+    rv_result = COND #(
+      WHEN lines( me->gt_outtab ) EQ 0
+      THEN abap_off
+      ELSE abap_on
+    ).
 
   ENDMETHOD .
 
@@ -193,7 +290,9 @@ CLASS class_report IMPLEMENTATION .
         display = salv_table->get_display_settings( ) .
         IF ( display IS BOUND ) .
           DATA(title) = CONV lvc_title( 'Corrigir status de Equipamento' ) .
-          title = |{ title } ({ lines( me->gt_outtab ) } registros)| .
+          title = COND #( WHEN lines( me->gt_outtab ) GT 1
+                          THEN |{ title } ({ lines( me->gt_outtab ) } registros)|
+                          ELSE |{ title } (1 registro)| ) .
           display->set_list_header( title ).
           display->set_striped_pattern( cl_salv_display_settings=>true ) .
         ENDIF .
@@ -458,14 +557,28 @@ ENDCLASS .
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
 SELECT-OPTIONS:
   s_equnr  FOR  equi-equnr OBLIGATORY .
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
+PARAMETERS:
+  p_deps TYPE tj02t-txt04 MODIF ID p1 DEFAULT 'DEPS',
+  p_lidi TYPE tj02t-txt04 MODIF ID p1 DEFAULT 'LIDI'.
+SELECTION-SCREEN END OF BLOCK b2.
 SELECTION-SCREEN END OF BLOCK b1.
 
 
 INITIALIZATION .
+  class_report=>initial( ) .
+
+AT SELECTION-SCREEN OUTPUT.
+  class_report=>initial( ) .
 
 START-OF-SELECTION .
 
-  DATA(obj) = NEW class_report( im_equi = s_equnr[] ) .
+  DATA(obj) =
+    NEW class_report( im_equi = s_equnr[]
+                      im_stat = VALUE #( sign   = rsmds_c_sign-including
+                                         option = rsmds_c_option-equal
+                                          ( low = class_report=>get_stat( p_lidi ) )
+                                          ( low = class_report=>get_stat( p_deps ) ) ) ) .
   IF ( obj IS BOUND ) .
     obj->get_data( ) .
   ENDIF.
@@ -473,5 +586,10 @@ START-OF-SELECTION .
 end-OF-SELECTION .
 
   IF ( obj IS BOUND ) .
-    obj->show( ) .
+
+    IF ( obj->has_data( ) EQ abap_true ) .
+      obj->show( ) .
+    ELSE .
+      MESSAGE i000(>0) WITH 'Não existem dados para o filtro informado.' .
+    ENDIF .
   ENDIF.
