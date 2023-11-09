@@ -151,7 +151,7 @@ CLASS class_report IMPLEMENTATION .
 
     me->progress(
       EXPORTING percent  = 10
-                message  = 'Buscando dados de Equipamentos...' ) .
+                message  = conv #( |{ 'Obter dados de Equipamentos...'(m01) }| ) ).
 
     SELECT equnr, objnr
       FROM equi
@@ -163,7 +163,7 @@ CLASS class_report IMPLEMENTATION .
 
     me->progress(
       EXPORTING percent  = 45
-                message  = 'Buscando descrição de Equipamentos...' ) .
+                message  = conv #( |{ 'Obter descrição de Equipamentos...'(m02) }| ) ).
 
     SELECT equnr, spras, eqktx, eqktu
       FROM eqkt
@@ -174,7 +174,7 @@ CLASS class_report IMPLEMENTATION .
 
     me->progress(
       EXPORTING percent  = 70
-                message  = 'Buscando Status de Equipamentos...' ) .
+                message  = conv #( |{ 'Obter Status de Equipamentos...'(m03) }| ) ).
 
     SELECT j~objnr, j~stat, j~inact,
            t~istat, t~spras, t~txt04
@@ -192,7 +192,7 @@ CLASS class_report IMPLEMENTATION .
 
     me->progress(
       EXPORTING percent  = 85
-                message  = 'Processando Status de Equipamentos...' ) .
+                message  = conv #( |{ 'Processar Status de Equipamentos...'(m04) }| ) ) .
 
     " Informando status
     LOOP AT lt_data ASSIGNING FIELD-SYMBOL(<fs_data>).
@@ -282,10 +282,10 @@ CLASS class_report IMPLEMENTATION .
 
         display = salv_table->get_display_settings( ) .
         IF ( display IS BOUND ) .
-          DATA(title) = CONV lvc_title( 'Corrigir status de Equipamento' ) .
+          DATA(title) = CONV lvc_title( 'Corrigir status de Equipamento'(m05) ) .
           title = COND #( WHEN lines( me->gt_outtab ) GT 1
-                          THEN |{ title } ({ lines( me->gt_outtab ) } registros)|
-                          ELSE |{ title } (1 registro)| ) .
+                          THEN |{ title } ({ lines( me->gt_outtab ) } { 'registros'(m06) })|
+                          ELSE |{ title } { '(1 registro)'(m07) }| ) .
           display->set_list_header( title ).
           display->set_striped_pattern( cl_salv_display_settings=>true ) .
         ENDIF .
@@ -402,13 +402,13 @@ CLASS class_report IMPLEMENTATION .
     ENDIF .
 
     me->progress( EXPORTING percent  = 10
-                            message  = 'Processandos Equipamentos...'
+                            message  = 'Processar Equipamentos...'(m08)
     ).
 
     LOOP AT me->gt_outtab ASSIGNING FIELD-SYMBOL(<fs_data>).
 
-      DATA(lv_message) = CONV char50( |Processando { sy-tabix }| ) .
-      lv_message = |{ lv_message } de { lines( me->gt_outtab ) }...| .
+      DATA(lv_message) = CONV char50( |{ 'Processar'(m09) } { sy-tabix }| ) .
+      lv_message = |{ lv_message } { 'de'(m10) } { lines( me->gt_outtab ) }{ '...'(m11) }| .
 
       me->progress(
         EXPORTING
@@ -581,6 +581,6 @@ end-OF-SELECTION .
     IF ( obj->has_data( ) EQ abap_true ) .
       obj->show( ) .
     ELSE .
-      MESSAGE i000(>0) WITH 'Não existem dados para o filtro informado.' .
+      MESSAGE i000(>0) WITH 'Não existem dados para o filtro informado.'(m12) .
     ENDIF .
   ENDIF.
