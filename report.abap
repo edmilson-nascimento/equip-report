@@ -584,4 +584,3 @@ end-OF-SELECTION .
       MESSAGE i000(>0) WITH 'Não existem dados para o filtro informado.'(m12) .
     ENDIF .
   ENDIF.
-  
