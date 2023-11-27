@@ -87,6 +87,12 @@ CLASS class_report DEFINITION .
         !im_data  TYPE tab_bdcdata
       EXPORTING
         ex_return TYPE bapiret2_t .
+    "! <p class="shorttext synchronized" lang="pt">Retorna as mensagens no formato BAPIRET2_T</p>
+    METHODS convert_message
+      IMPORTING
+        !im_data         TYPE tab_bdcmsgcoll
+      RETURNING
+        VALUE(rt_result) TYPE bapiret2_t .
 
 ENDCLASS .
 
@@ -151,7 +157,7 @@ CLASS class_report IMPLEMENTATION .
 
     me->progress(
       EXPORTING percent  = 10
-                message  = conv #( |{ 'Obter dados de Equipamentos...'(m01) }| ) ).
+                message  = CONV #( |{ 'Obter dados de Equipamentos...'(m01) }| ) ).
 
     SELECT equnr, objnr
       FROM equi
@@ -163,7 +169,7 @@ CLASS class_report IMPLEMENTATION .
 
     me->progress(
       EXPORTING percent  = 45
-                message  = conv #( |{ 'Obter descrição de Equipamentos...'(m02) }| ) ).
+                message  = CONV #( |{ 'Obter descrição de Equipamentos...'(m02) }| ) ).
 
     SELECT equnr, spras, eqktx, eqktu
       FROM eqkt
@@ -174,7 +180,7 @@ CLASS class_report IMPLEMENTATION .
 
     me->progress(
       EXPORTING percent  = 70
-                message  = conv #( |{ 'Obter Status de Equipamentos...'(m03) }| ) ).
+                message  = CONV #( |{ 'Obter Status de Equipamentos...'(m03) }| ) ).
 
     SELECT j~objnr, j~stat, j~inact,
            t~istat, t~spras, t~txt04
@@ -192,7 +198,7 @@ CLASS class_report IMPLEMENTATION .
 
     me->progress(
       EXPORTING percent  = 85
-                message  = conv #( |{ 'Processar Status de Equipamentos...'(m04) }| ) ) .
+                message  = CONV #( |{ 'Processar Status de Equipamentos...'(m04) }| ) ) .
 
     " Informando status
     LOOP AT lt_data ASSIGNING FIELD-SYMBOL(<fs_data>).
@@ -290,7 +296,7 @@ CLASS class_report IMPLEMENTATION .
           display->set_striped_pattern( cl_salv_display_settings=>true ) .
         ENDIF .
 
-        salv_table->display( ).
+        salv_table->display( ) .
 
       CATCH cx_salv_msg .
 
@@ -541,6 +547,22 @@ CLASS class_report IMPLEMENTATION .
                USING im_data
              OPTIONS FROM ls_options
             MESSAGES INTO lt_message .
+
+    ex_return = me->convert_message( lt_message ) .
+
+  ENDMETHOD .
+
+
+  METHOD convert_message .
+
+    IF ( lines( im_data ) EQ 0 ) .
+      RETURN .
+    ENDIF .
+
+    CALL FUNCTION 'CONVERT_BDCMSGCOLL_TO_BAPIRET2'
+      TABLES
+        imt_bdcmsgcoll = im_data
+        ext_return     = rt_result.
 
   ENDMETHOD .
 
