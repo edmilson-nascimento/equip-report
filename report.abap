@@ -83,7 +83,7 @@ CLASS class_report DEFINITION .
                   WITH DEFAULT KEY .
 
     CONSTANTS:
-      lc_package_size TYPE i VALUE 2500 .
+      gc_package_size TYPE i VALUE 2500 .
 
     DATA:
       salv_table  TYPE REF TO cl_salv_table,
@@ -92,7 +92,7 @@ CLASS class_report DEFINITION .
       gv_deps     TYPE tj02t-istat,
       gt_messages TYPE bapiret2_t,
       gt_outtab   TYPE tab_out,
-      lv_cursor   TYPE cursor .
+      gv_cursor   TYPE cursor .
 
     "! <p class="shorttext synchronized" lang="pt">Mantem processamento apos ALV exibido</p>
     METHODS on_user_command
@@ -604,7 +604,7 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-    OPEN CURSOR WITH HOLD @lv_cursor FOR
+    OPEN CURSOR WITH HOLD @me->gv_cursor FOR
 
     SELECT equnr, objnr
       FROM equi
@@ -612,10 +612,10 @@ CLASS class_report IMPLEMENTATION .
 
     DO .
 
-      FETCH NEXT CURSOR lv_cursor
-      APPENDING TABLE rt_result PACKAGE SIZE lc_package_size .
+      FETCH NEXT CURSOR gv_cursor
+      APPENDING TABLE rt_result PACKAGE SIZE me->gc_package_size .
 
-      IF sy-subrc IS NOT INITIAL.
+      IF ( sy-subrc NE 0 ).
         EXIT.
       ENDIF.
 
@@ -625,7 +625,7 @@ CLASS class_report IMPLEMENTATION .
 
     ENDDO .
 
-    CLOSE CURSOR lv_cursor.
+    CLOSE CURSOR me->gv_cursor.
 
   ENDMETHOD .
 
@@ -636,7 +636,7 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-    OPEN CURSOR WITH HOLD @lv_cursor FOR
+    OPEN CURSOR WITH HOLD @me->gv_cursor FOR
 
     SELECT equnr, spras, eqktx, eqktu
       FROM eqkt
@@ -646,8 +646,8 @@ CLASS class_report IMPLEMENTATION .
 
     DO .
 
-      FETCH NEXT CURSOR lv_cursor
-      APPENDING TABLE rt_result PACKAGE SIZE lc_package_size .
+      FETCH NEXT CURSOR me->gv_cursor
+      APPENDING TABLE rt_result PACKAGE SIZE me->gc_package_size .
 
       IF ( sy-subrc NE 0 ).
         EXIT.
@@ -659,7 +659,7 @@ CLASS class_report IMPLEMENTATION .
 
     ENDDO .
 
-    CLOSE CURSOR lv_cursor.
+    CLOSE CURSOR me->gv_cursor.
 
   ENDMETHOD .
 
@@ -670,7 +670,7 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-    OPEN CURSOR WITH HOLD @lv_cursor FOR
+    OPEN CURSOR WITH HOLD @me->gv_cursor FOR
 
     SELECT j~objnr, j~stat, j~inact,
            t~istat, t~spras, t~txt04
@@ -684,8 +684,8 @@ CLASS class_report IMPLEMENTATION .
 
     DO .
 
-      FETCH NEXT CURSOR lv_cursor
-      APPENDING TABLE rt_result PACKAGE SIZE lc_package_size .
+      FETCH NEXT CURSOR me->gv_cursor
+      APPENDING TABLE rt_result PACKAGE SIZE me->gc_package_size .
 
       IF ( sy-subrc NE 0 ).
         EXIT.
@@ -697,7 +697,7 @@ CLASS class_report IMPLEMENTATION .
 
     ENDDO .
 
-    CLOSE CURSOR lv_cursor.
+    CLOSE CURSOR me->gv_cursor.
 
   ENDMETHOD .
 
