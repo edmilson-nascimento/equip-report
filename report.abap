@@ -55,7 +55,25 @@ CLASS class_report DEFINITION .
         eqktu TYPE eqkt-eqktu,
         sttxt TYPE itobattr-sttxt,
       END OF ty_out,
-      tab_out TYPE TABLE OF ty_out.
+      tab_out TYPE TABLE OF ty_out,
+
+      BEGIN OF ty_equi,
+        equnr TYPE equi-equnr,
+        objnr TYPE equi-objnr,
+      END OF ty_equi,
+      tab_equi TYPE SORTED TABLE OF ty_equi
+               WITH UNIQUE KEY equnr,
+      BEGIN OF ty_eqkt,
+        equnr TYPE eqkt-equnr,
+        spras TYPE eqkt-spras,
+        eqktx TYPE eqkt-eqktx,
+        eqktu TYPE eqkt-eqktu,
+      END OF ty_eqkt,
+      tab_eqkt TYPE SORTED TABLE OF ty_eqkt
+               WITH UNIQUE KEY equnr spras .
+               
+    CONSTANTS:
+      lc_package_size TYPE i VALUE 2500 .
 
     DATA:
       salv_table  TYPE REF TO cl_salv_table,
@@ -63,7 +81,8 @@ CLASS class_report DEFINITION .
       gv_lidi     TYPE tj02t-istat,
       gv_deps     TYPE tj02t-istat,
       gt_messages TYPE bapiret2_t,
-      gt_outtab   TYPE tab_out.
+      gt_outtab   TYPE tab_out,
+      lv_cursor   TYPE cursor .
 
     "! <p class="shorttext synchronized" lang="pt">Mantem processamento apos ALV exibido</p>
     METHODS on_user_command
@@ -93,6 +112,16 @@ CLASS class_report DEFINITION .
         !im_data         TYPE tab_bdcmsgcoll
       RETURNING
         VALUE(rt_result) TYPE bapiret2_t .
+    "! <p class="shorttext synchronized" lang="pt">Retorna dados de Equipamentos</p>
+    METHODS get_equi_by_open
+      RETURNING
+        VALUE(rt_result) TYPE tab_equi .
+    "! <p class="shorttext synchronized" lang="pt">Retorna dados de Equipamentos</p>
+    METHODS get_desc_by_open
+      IMPORTING
+        !im_data         TYPE tab_equi
+      RETURNING
+        VALUE(rt_result) TYPE tab_eqkt .
 
 ENDCLASS .
 
@@ -159,24 +188,13 @@ CLASS class_report IMPLEMENTATION .
       EXPORTING percent  = 10
                 message  = CONV #( |{ 'Obter dados de Equipamentos...'(m01) }| ) ).
 
-    SELECT equnr, objnr
-      FROM equi
-      INTO TABLE @DATA(lt_data)
-     WHERE equnr IN @me->gt_equi .
-    IF ( sy-subrc NE 0 ) .
-      RETURN .
-    ENDIF .
+    DATA(lt_data) = me->get_equi_by_open( ) .
 
     me->progress(
       EXPORTING percent  = 45
                 message  = CONV #( |{ 'Obter descrição de Equipamentos...'(m02) }| ) ).
 
-    SELECT equnr, spras, eqktx, eqktu
-      FROM eqkt
-      INTO TABLE @DATA(lt_desc)
-       FOR ALL ENTRIES IN @lt_data
-     WHERE equnr EQ @lt_data-equnr
-       AND spras EQ @sy-langu .
+    DATA(lt_desc) = me->get_desc_by_open( lt_data ) .
 
     me->progress(
       EXPORTING percent  = 70
@@ -441,16 +459,25 @@ CLASS class_report IMPLEMENTATION .
           ex_return = lt_return
       ).
 
-      IF ( NOT line_exists( lt_return[ type = if_xo_const_message=>error ] ) ) .
-        APPEND VALUE bapiret2(
-          type       = if_xo_const_message=>success
-          id         = 'IS'
-          number     = 817
-          message_v1 = CONV #( |{ <fs_data>-equnr ALPHA = OUT }| ) )
-        TO me->gt_messages .
-      ELSE .
+      " Exibe a mensagem de erro que foi retornada
+      IF ( line_exists( lt_return[ type = if_xo_const_message=>error ] ) ) .
         me->gt_messages = VALUE #( BASE me->gt_messages ( LINES OF lt_return ) ) .
+        CONTINUE .
       ENDIF .
+
+      " Mantem mensagem de sucesso, caso existe uma
+      IF ( line_exists( lt_return[ type = if_xo_const_message=>success ] ) ) .
+        me->gt_messages = VALUE #( BASE me->gt_messages ( LINES OF lt_return ) ) .
+        CONTINUE .
+      ENDIF .
+
+      " Caso de processamento que não tenha mensagem de erro e possa retornar vazio
+      APPEND VALUE bapiret2(
+        type       = if_xo_const_message=>success
+        id         = 'IS'
+        number     = 817
+        message_v1 = CONV #( |{ <fs_data>-equnr ALPHA = OUT }| ) )
+      TO me->gt_messages .
 
     ENDLOOP .
 
@@ -563,6 +590,72 @@ CLASS class_report IMPLEMENTATION .
       TABLES
         imt_bdcmsgcoll = im_data
         ext_return     = rt_result.
+
+  ENDMETHOD .
+
+
+  METHOD get_equi_by_open .
+
+    IF ( lines( me->gt_equi ) EQ 0 ) .
+      RETURN .
+    ENDIF .
+
+    OPEN CURSOR WITH HOLD @lv_cursor FOR
+
+    SELECT equnr, objnr
+      FROM equi
+     WHERE equnr IN @me->gt_equi .
+
+    DO .
+
+      FETCH NEXT CURSOR lv_cursor
+      APPENDING TABLE rt_result PACKAGE SIZE lc_package_size .
+
+      IF sy-subrc IS NOT INITIAL.
+        EXIT.
+      ENDIF.
+
+      DATA(message) = CONV char50( |{ lines( rt_result ) } Equip. recuperados...| ) .
+      me->progress( percent  = 10
+                    message  = message ).
+
+    ENDDO .
+
+    CLOSE CURSOR lv_cursor.
+
+  ENDMETHOD .
+
+
+  METHOD get_desc_by_open .
+
+    IF ( lines( im_data ) EQ 0 ) .
+      RETURN .
+    ENDIF .
+
+    OPEN CURSOR WITH HOLD @lv_cursor FOR
+
+    SELECT equnr, spras, eqktx, eqktu
+      FROM eqkt
+       FOR ALL ENTRIES IN @im_data
+     WHERE equnr EQ @im_data-equnr
+       AND spras EQ @sy-langu .
+
+    DO .
+
+      FETCH NEXT CURSOR lv_cursor
+      APPENDING TABLE rt_result PACKAGE SIZE lc_package_size .
+
+      IF ( sy-subrc NE 0 ).
+        EXIT.
+      ENDIF.
+
+      DATA(message) = CONV char50( |{ lines( rt_result ) } Reg. desc. recuperados...| ) .
+      me->progress( percent  = 45
+                    message  = message ).
+
+    ENDDO .
+
+    CLOSE CURSOR lv_cursor.
 
   ENDMETHOD .
 
