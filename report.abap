@@ -691,7 +691,7 @@ CLASS class_report IMPLEMENTATION .
         EXIT.
       ENDIF.
 
-      DATA(message) = CONV char50( |{ lines( rt_result ) } Reg. desc. recuperados...| ) .
+      DATA(message) = CONV char50( |{ lines( rt_result ) } Reg. Status recuperados...| ) .
       me->progress( percent  = 45
                     message  = message ).
 
