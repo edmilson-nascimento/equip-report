@@ -72,14 +72,14 @@ CLASS class_report DEFINITION .
       tab_eqkt TYPE SORTED TABLE OF ty_eqkt
                WITH UNIQUE KEY equnr spras,
       BEGIN OF ty_status,
-        objnr type jest-objnr,
-        stat  type jest-stat,
-        inact type jest-inact,
-        istat type tj02t-istat,
-        spras type tj02t-spras,
-        txt04 type tj02t-txt04,
+        objnr TYPE jest-objnr,
+        stat  TYPE jest-stat,
+        inact TYPE jest-inact,
+        istat TYPE tj02t-istat,
+        spras TYPE tj02t-spras,
+        txt04 TYPE tj02t-txt04,
       END OF ty_status,
-      tab_status TYPE standard TABLE OF ty_status
+      tab_status TYPE STANDARD TABLE OF ty_status
                   WITH DEFAULT KEY .
 
     CONSTANTS:
@@ -92,7 +92,7 @@ CLASS class_report DEFINITION .
       gv_deps     TYPE tj02t-istat,
       gt_messages TYPE bapiret2_t,
       gt_outtab   TYPE tab_out,
-      gv_cursor   TYPE cursor .
+      gv_cursor   TYPE cursor.
 
     "! <p class="shorttext synchronized" lang="pt">Mantem processamento apos ALV exibido</p>
     METHODS on_user_command
@@ -216,7 +216,7 @@ CLASS class_report IMPLEMENTATION .
       EXPORTING percent  = 70
                 message  = CONV #( |{ 'Obter Status de Equipamentos...'(m03) }| ) ).
 
-    data(lt_status) = me->get_status_by_open( lt_data ) .
+    DATA(lt_status) = me->get_status_by_open( lt_data ) .
 
     me->progress(
       EXPORTING percent  = 85
@@ -224,6 +224,14 @@ CLASS class_report IMPLEMENTATION .
 
     " Informando status
     LOOP AT lt_data ASSIGNING FIELD-SYMBOL(<fs_data>).
+
+      DATA(lv_message) = CONV char50( |{ 'Processar'(m09) } { sy-tabix }| ) .
+      lv_message = |{ lv_message } { 'de'(m10) } { lines( lt_data ) }{ '...'(m11) }| .
+
+      me->progress(
+        total    = lines( lt_data )
+        currency = sy-tabix
+        message  = lv_message ) .
 
       DATA(description) = VALUE #( lt_desc[ equnr = <fs_data>-equnr ] OPTIONAL ) .
 
@@ -604,28 +612,31 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-    OPEN CURSOR WITH HOLD @me->gv_cursor FOR
+    TRY .
+        OPEN CURSOR WITH HOLD @me->gv_cursor FOR
 
-    SELECT equnr, objnr
-      FROM equi
-     WHERE equnr IN @me->gt_equi .
+        SELECT equnr, objnr
+          FROM equi
+         WHERE equnr IN @me->gt_equi .
 
-    DO .
+        DO .
+*         COMMIT WORK.
+          FETCH NEXT CURSOR @gv_cursor
+          APPENDING TABLE @rt_result PACKAGE SIZE @me->gc_package_size .
 
-      FETCH NEXT CURSOR gv_cursor
-      APPENDING TABLE rt_result PACKAGE SIZE me->gc_package_size .
+          IF ( sy-subrc NE 0 ).
+            EXIT.
+          ENDIF.
 
-      IF ( sy-subrc NE 0 ).
-        EXIT.
-      ENDIF.
+          DATA(message) = CONV char50( |{ lines( rt_result ) } Equip. recuperados...| ) .
+          me->progress( percent  = 10
+                        message  = message ).
+        ENDDO .
 
-      DATA(message) = CONV char50( |{ lines( rt_result ) } Equip. recuperados...| ) .
-      me->progress( percent  = 10
-                    message  = message ).
+        CLOSE CURSOR me->gv_cursor.
+      CATCH cx_sy_open_sql_db .
+    ENDTRY.
 
-    ENDDO .
-
-    CLOSE CURSOR me->gv_cursor.
 
   ENDMETHOD .
 
@@ -636,30 +647,31 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-    OPEN CURSOR WITH HOLD @me->gv_cursor FOR
+    TRY .
+        OPEN CURSOR WITH HOLD @me->gv_cursor FOR
 
-    SELECT equnr, spras, eqktx, eqktu
-      FROM eqkt
-       FOR ALL ENTRIES IN @im_data
-     WHERE equnr EQ @im_data-equnr
-       AND spras EQ @sy-langu .
+        SELECT equnr, spras, eqktx, eqktu
+          FROM eqkt
+           FOR ALL ENTRIES IN @im_data
+         WHERE equnr EQ @im_data-equnr
+           AND spras EQ @sy-langu .
 
-    DO .
+        DO .
+          FETCH NEXT CURSOR @me->gv_cursor
+          APPENDING TABLE @rt_result PACKAGE SIZE @me->gc_package_size .
 
-      FETCH NEXT CURSOR me->gv_cursor
-      APPENDING TABLE rt_result PACKAGE SIZE me->gc_package_size .
+          IF ( sy-subrc NE 0 ).
+            EXIT.
+          ENDIF.
 
-      IF ( sy-subrc NE 0 ).
-        EXIT.
-      ENDIF.
+          DATA(message) = CONV char50( |{ lines( rt_result ) } Reg. desc. recuperados...| ) .
+          me->progress( percent  = 50
+                        message  = message ).
+        ENDDO .
 
-      DATA(message) = CONV char50( |{ lines( rt_result ) } Reg. desc. recuperados...| ) .
-      me->progress( percent  = 45
-                    message  = message ).
-
-    ENDDO .
-
-    CLOSE CURSOR me->gv_cursor.
+        CLOSE CURSOR me->gv_cursor.
+      CATCH cx_sy_open_sql_db .
+    ENDTRY.
 
   ENDMETHOD .
 
@@ -670,34 +682,35 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-    OPEN CURSOR WITH HOLD @me->gv_cursor FOR
+    TRY .
+        OPEN CURSOR WITH HOLD @me->gv_cursor FOR
 
-    SELECT j~objnr, j~stat, j~inact,
-           t~istat, t~spras, t~txt04
-      FROM jest AS j
-      LEFT JOIN tj02t AS t
-        ON j~stat EQ t~istat
-       FOR ALL ENTRIES IN @im_data
-     WHERE j~objnr EQ @im_data-objnr
-       AND j~inact EQ @abap_false
-       AND t~spras EQ @sy-langu .
+        SELECT j~objnr, j~stat, j~inact,
+               t~istat, t~spras, t~txt04
+          FROM jest AS j
+          LEFT JOIN tj02t AS t
+            ON j~stat EQ t~istat
+           FOR ALL ENTRIES IN @im_data
+         WHERE j~objnr EQ @im_data-objnr
+           AND j~inact EQ @abap_false
+           AND t~spras EQ @sy-langu .
 
-    DO .
+        DO .
+          FETCH NEXT CURSOR @me->gv_cursor
+          APPENDING TABLE @rt_result PACKAGE SIZE @me->gc_package_size .
 
-      FETCH NEXT CURSOR me->gv_cursor
-      APPENDING TABLE rt_result PACKAGE SIZE me->gc_package_size .
+          IF ( sy-subrc NE 0 ).
+            EXIT.
+          ENDIF.
 
-      IF ( sy-subrc NE 0 ).
-        EXIT.
-      ENDIF.
+          DATA(message) = CONV char50( |{ lines( rt_result ) } Reg. Status recuperados...| ) .
+          me->progress( percent  = 75
+                        message  = message ).
+        ENDDO .
 
-      DATA(message) = CONV char50( |{ lines( rt_result ) } Reg. Status recuperados...| ) .
-      me->progress( percent  = 45
-                    message  = message ).
-
-    ENDDO .
-
-    CLOSE CURSOR me->gv_cursor.
+        CLOSE CURSOR @me->gv_cursor.
+      CATCH cx_sy_open_sql_db .
+    ENDTRY.
 
   ENDMETHOD .
 
