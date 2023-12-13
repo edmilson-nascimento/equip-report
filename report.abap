@@ -70,8 +70,18 @@ CLASS class_report DEFINITION .
         eqktu TYPE eqkt-eqktu,
       END OF ty_eqkt,
       tab_eqkt TYPE SORTED TABLE OF ty_eqkt
-               WITH UNIQUE KEY equnr spras .
-               
+               WITH UNIQUE KEY equnr spras,
+      BEGIN OF ty_status,
+        objnr type jest-objnr,
+        stat  type jest-stat,
+        inact type jest-inact,
+        istat type tj02t-istat,
+        spras type tj02t-spras,
+        txt04 type tj02t-txt04,
+      END OF ty_status,
+      tab_status TYPE standard TABLE OF ty_status
+                  WITH DEFAULT KEY .
+
     CONSTANTS:
       lc_package_size TYPE i VALUE 2500 .
 
@@ -116,12 +126,18 @@ CLASS class_report DEFINITION .
     METHODS get_equi_by_open
       RETURNING
         VALUE(rt_result) TYPE tab_equi .
-    "! <p class="shorttext synchronized" lang="pt">Retorna dados de Equipamentos</p>
+    "! <p class="shorttext synchronized" lang="pt">Retorna descrição de Equipamentos</p>
     METHODS get_desc_by_open
       IMPORTING
         !im_data         TYPE tab_equi
       RETURNING
         VALUE(rt_result) TYPE tab_eqkt .
+    "! <p class="shorttext synchronized" lang="pt">Retorna Status de Equipamentos</p>
+    METHODS get_status_by_open
+      IMPORTING
+        !im_data         TYPE tab_equi
+      RETURNING
+        VALUE(rt_result) TYPE tab_status .
 
 ENDCLASS .
 
@@ -200,19 +216,7 @@ CLASS class_report IMPLEMENTATION .
       EXPORTING percent  = 70
                 message  = CONV #( |{ 'Obter Status de Equipamentos...'(m03) }| ) ).
 
-    SELECT j~objnr, j~stat, j~inact,
-           t~istat, t~spras, t~txt04
-      FROM jest AS j
-      LEFT JOIN tj02t AS t
-        ON j~stat EQ t~istat
-      INTO TABLE @DATA(lt_status)
-       FOR ALL ENTRIES IN @lt_data
-     WHERE j~objnr EQ @lt_data-objnr
-       AND j~inact EQ @abap_false
-       AND t~spras EQ @sy-langu .
-    IF ( sy-subrc NE 0 ) .
-      RETURN .
-    ENDIF .
+    data(lt_status) = me->get_status_by_open( lt_data ) .
 
     me->progress(
       EXPORTING percent  = 85
@@ -639,6 +643,44 @@ CLASS class_report IMPLEMENTATION .
        FOR ALL ENTRIES IN @im_data
      WHERE equnr EQ @im_data-equnr
        AND spras EQ @sy-langu .
+
+    DO .
+
+      FETCH NEXT CURSOR lv_cursor
+      APPENDING TABLE rt_result PACKAGE SIZE lc_package_size .
+
+      IF ( sy-subrc NE 0 ).
+        EXIT.
+      ENDIF.
+
+      DATA(message) = CONV char50( |{ lines( rt_result ) } Reg. desc. recuperados...| ) .
+      me->progress( percent  = 45
+                    message  = message ).
+
+    ENDDO .
+
+    CLOSE CURSOR lv_cursor.
+
+  ENDMETHOD .
+
+
+  METHOD get_status_by_open .
+
+    IF ( lines( im_data ) EQ 0 ) .
+      RETURN .
+    ENDIF .
+
+    OPEN CURSOR WITH HOLD @lv_cursor FOR
+
+    SELECT j~objnr, j~stat, j~inact,
+           t~istat, t~spras, t~txt04
+      FROM jest AS j
+      LEFT JOIN tj02t AS t
+        ON j~stat EQ t~istat
+       FOR ALL ENTRIES IN @im_data
+     WHERE j~objnr EQ @im_data-objnr
+       AND j~inact EQ @abap_false
+       AND t~spras EQ @sy-langu .
 
     DO .
 
