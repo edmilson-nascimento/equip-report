@@ -27,12 +27,16 @@ CLASS class_report DEFINITION .
         !im_equi TYPE range_t_equnr
         !im_lidi TYPE tj02t-istat
         !im_deps TYPE tj02t-istat .
+    "! <p class="shorttext synchronized" lang="pt">Retorna TRUE quando se tem o filtro valido</p>
+    METHODS is_valid_filter
+      RETURNING
+        VALUE(result) TYPE sap_bool .
     "! <p class="shorttext synchronized" lang="pt">Busca dados de equipamentos</p>
     METHODS get_data .
     "! <p class="shorttext synchronized" lang="pt">Retorna TRUE caso existam dados para exibição/processamento</p>
     METHODS has_data
       RETURNING
-        VALUE(rv_result) TYPE sap_bool .
+        VALUE(result) TYPE sap_bool .
     "! <p class="shorttext synchronized" lang="pt">Exibe dados encontrados</p>
     METHODS show .
     "! <p class="shorttext synchronized" lang="pt">Exibe status de processamento</p>
@@ -192,6 +196,10 @@ CLASS class_report IMPLEMENTATION .
   ENDMETHOD .
 
 
+  METHOD is_valid_filter .
+  ENDMETHOD .
+
+
   METHOD get_data .
 
     CLEAR me->gt_outtab .
@@ -270,7 +278,7 @@ CLASS class_report IMPLEMENTATION .
 
   METHOD has_data .
 
-    rv_result = COND #(
+    result = COND #(
       WHEN lines( me->gt_outtab ) EQ 0
       THEN abap_off
       ELSE abap_on
@@ -606,6 +614,7 @@ CLASS class_report IMPLEMENTATION .
   ENDMETHOD .
 
 
+
   METHOD get_equi_by_open .
 
     IF ( lines( me->gt_equi ) EQ 0 ) .
@@ -641,19 +650,28 @@ CLASS class_report IMPLEMENTATION .
   ENDMETHOD .
 
 
+
   METHOD get_desc_by_open .
+
 
     IF ( lines( im_data ) EQ 0 ) .
       RETURN .
     ENDIF .
+
+    DATA(lr_equi) = VALUE range_t_equnr(
+      FOR l IN im_data
+      ( sign   = rsmds_c_sign-including
+        option = rsmds_c_option-equal
+        low    = l-equnr )
+    ).
 
     TRY .
         OPEN CURSOR WITH HOLD @me->gv_cursor FOR
 
         SELECT equnr, spras, eqktx, eqktu
           FROM eqkt
-           FOR ALL ENTRIES IN @im_data
-         WHERE equnr EQ @im_data-equnr
+*        WHERE equnr IN @me->gt_equi
+         WHERE equnr IN @lr_equi
            AND spras EQ @sy-langu .
 
         DO .
@@ -682,6 +700,13 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
+    DATA(lr_equi) = VALUE range_t_equnr(
+      FOR l IN im_data
+      ( sign   = rsmds_c_sign-including
+        option = rsmds_c_option-equal
+        low    = l-equnr )
+    ).
+
     TRY .
         OPEN CURSOR WITH HOLD @me->gv_cursor FOR
 
@@ -690,8 +715,9 @@ CLASS class_report IMPLEMENTATION .
           FROM jest AS j
           LEFT JOIN tj02t AS t
             ON j~stat EQ t~istat
-           FOR ALL ENTRIES IN @im_data
-         WHERE j~objnr EQ @im_data-objnr
+*          FOR ALL ENTRIES IN @im_data
+*        WHERE j~objnr EQ @im_data-objnr
+         WHERE j~objnr IN @lr_equi
            AND j~inact EQ @abap_false
            AND t~spras EQ @sy-langu .
 
@@ -741,7 +767,9 @@ START-OF-SELECTION .
                       im_lidi = class_report=>get_stat( p_lidi )
                       im_deps = class_report=>get_stat( p_deps ) ) .
   IF ( obj IS BOUND ) .
-    obj->get_data( ) .
+    IF ( obj->is_valid_filter( ) ) .
+      obj->get_data( ) .
+    ENDIF.
   ENDIF.
 
 end-OF-SELECTION .
