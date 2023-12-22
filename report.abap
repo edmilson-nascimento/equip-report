@@ -6,7 +6,7 @@
 REPORT /yga/fix_equi_status.
 
 TABLES:
-  equi .
+  equi, jcds .
 
 
 CLASS class_report DEFINITION .
@@ -24,9 +24,10 @@ CLASS class_report DEFINITION .
     "! <p class="shorttext synchronized" lang="pt">Metodo construtor</p>
     METHODS constructor
       IMPORTING
-        !im_equi TYPE range_t_equnr
-        !im_lidi TYPE tj02t-istat
-        !im_deps TYPE tj02t-istat .
+        !im_equi  TYPE range_t_equnr
+        !im_udate TYPE trg_date
+        !im_lidi  TYPE tj02t-istat
+        !im_deps  TYPE tj02t-istat .
     "! <p class="shorttext synchronized" lang="pt">Retorna TRUE quando se tem o filtro valido</p>
     METHODS is_valid_filter
       RETURNING
@@ -92,6 +93,7 @@ CLASS class_report DEFINITION .
     DATA:
       salv_table  TYPE REF TO cl_salv_table,
       gt_equi     TYPE range_t_equnr,
+      gt_udate    TYPE trg_date,
       gv_lidi     TYPE tj02t-istat,
       gv_deps     TYPE tj02t-istat,
       gt_messages TYPE bapiret2_t,
@@ -127,17 +129,17 @@ CLASS class_report DEFINITION .
       RETURNING
         VALUE(rt_result) TYPE bapiret2_t .
     "! <p class="shorttext synchronized" lang="pt">Retorna dados de Equipamentos</p>
-    METHODS get_equi_by_open
+    METHODS get_equi
       RETURNING
         VALUE(rt_result) TYPE tab_equi .
     "! <p class="shorttext synchronized" lang="pt">Retorna descrição de Equipamentos</p>
-    METHODS get_desc_by_open
+    METHODS get_desc
       IMPORTING
         !im_data         TYPE tab_equi
       RETURNING
         VALUE(rt_result) TYPE tab_eqkt .
     "! <p class="shorttext synchronized" lang="pt">Retorna Status de Equipamentos</p>
-    METHODS get_status_by_open
+    METHODS get_status
       IMPORTING
         !im_data         TYPE tab_equi
       RETURNING
@@ -197,6 +199,16 @@ CLASS class_report IMPLEMENTATION .
 
 
   METHOD is_valid_filter .
+
+    IF ( lines( me->gt_equi ) GT 0 ) .
+      result = abap_on .
+      RETURN .
+    ENDIF .
+
+    IF ( lines( me->gt_udate ) GT 0 ) .
+      result = abap_on .
+    ENDIF .
+
   ENDMETHOD .
 
 
@@ -212,19 +224,19 @@ CLASS class_report IMPLEMENTATION .
       EXPORTING percent  = 10
                 message  = CONV #( |{ 'Obter dados de Equipamentos...'(m01) }| ) ).
 
-    DATA(lt_data) = me->get_equi_by_open( ) .
+    DATA(lt_data) = me->get_equi( ) .
 
     me->progress(
       EXPORTING percent  = 45
                 message  = CONV #( |{ 'Obter descrição de Equipamentos...'(m02) }| ) ).
 
-    DATA(lt_desc) = me->get_desc_by_open( lt_data ) .
+    DATA(lt_desc) = me->get_desc( lt_data ) .
 
     me->progress(
       EXPORTING percent  = 70
                 message  = CONV #( |{ 'Obter Status de Equipamentos...'(m03) }| ) ).
 
-    DATA(lt_status) = me->get_status_by_open( lt_data ) .
+    DATA(lt_status) = me->get_status( lt_data ) .
 
     me->progress(
       EXPORTING percent  = 85
@@ -615,10 +627,61 @@ CLASS class_report IMPLEMENTATION .
 
 
 
-  METHOD get_equi_by_open .
+  METHOD get_equi .
 
-    IF ( lines( me->gt_equi ) EQ 0 ) .
+    TYPES:
+      BEGIN OF ty_status,
+        objnr TYPE jcds-objnr,
+        stat  TYPE jcds-stat,
+        chgnr TYPE jcds-chgnr,
+        usnam TYPE jcds-usnam,
+        udate TYPE jcds-udate,
+        utime TYPE jcds-utime,
+        tcode TYPE jcds-tcode,
+      END OF ty_status,
+      tab_statys TYPE STANDARD TABLE OF ty_status.
+
+    DATA:
+      lt_status TYPE tab_status .
+
+    IF ( lines( me->gt_equi )  EQ 0 ) AND
+       ( lines( me->gt_udate ) EQ 0 ) .
       RETURN .
+    ENDIF .
+
+    " Filtro apenas por Data de modificação
+    IF ( lines( me->gt_equi )  EQ 0 ) AND
+       ( lines( me->gt_udate ) GT 0 ) .
+
+      TRY .
+          OPEN CURSOR WITH HOLD @me->gv_cursor FOR
+          SELECT objnr, stat, chgnr, usnam, udate, utime, tcode
+            FROM jcds
+           WHERE udate IN @me->gt_udate .
+          DO .
+            FETCH NEXT CURSOR @gv_cursor
+            APPENDING TABLE @lt_status PACKAGE SIZE @me->gc_package_size .
+
+            IF ( sy-subrc NE 0 ).
+              EXIT.
+            ENDIF.
+
+            DATA(message) = CONV char50( |{ lines( rt_result ) } Equip. recuperados...| ) .
+            me->progress( percent  = 10
+                          message  = message ).
+          ENDDO .
+          CLOSE CURSOR me->gv_cursor.
+        CATCH cx_sy_open_sql_db .
+      ENDTRY.
+      
+    me->gt_equi = VALUE range_t_equnr(
+      FOR l IN im_data
+      ( sign   = rsmds_c_sign-including
+        option = rsmds_c_option-equal
+        low    = l-equnr )
+    ).
+      
+
     ENDIF .
 
     TRY .
@@ -629,7 +692,6 @@ CLASS class_report IMPLEMENTATION .
          WHERE equnr IN @me->gt_equi .
 
         DO .
-*         COMMIT WORK.
           FETCH NEXT CURSOR @gv_cursor
           APPENDING TABLE @rt_result PACKAGE SIZE @me->gc_package_size .
 
@@ -637,7 +699,7 @@ CLASS class_report IMPLEMENTATION .
             EXIT.
           ENDIF.
 
-          DATA(message) = CONV char50( |{ lines( rt_result ) } Equip. recuperados...| ) .
+          message = |{ lines( rt_result ) } Equip. recuperados...| .
           me->progress( percent  = 10
                         message  = message ).
         ENDDO .
@@ -651,7 +713,7 @@ CLASS class_report IMPLEMENTATION .
 
 
 
-  METHOD get_desc_by_open .
+  METHOD get_desc .
 
 
     IF ( lines( im_data ) EQ 0 ) .
@@ -670,7 +732,6 @@ CLASS class_report IMPLEMENTATION .
 
         SELECT equnr, spras, eqktx, eqktu
           FROM eqkt
-*        WHERE equnr IN @me->gt_equi
          WHERE equnr IN @lr_equi
            AND spras EQ @sy-langu .
 
@@ -694,7 +755,7 @@ CLASS class_report IMPLEMENTATION .
   ENDMETHOD .
 
 
-  METHOD get_status_by_open .
+  METHOD get_status .
 
     IF ( lines( im_data ) EQ 0 ) .
       RETURN .
@@ -715,8 +776,6 @@ CLASS class_report IMPLEMENTATION .
           FROM jest AS j
           LEFT JOIN tj02t AS t
             ON j~stat EQ t~istat
-*          FOR ALL ENTRIES IN @im_data
-*        WHERE j~objnr EQ @im_data-objnr
          WHERE j~objnr IN @lr_equi
            AND j~inact EQ @abap_false
            AND t~spras EQ @sy-langu .
@@ -745,7 +804,8 @@ ENDCLASS .
 
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
 SELECT-OPTIONS:
-  s_equnr  FOR  equi-equnr OBLIGATORY .
+  s_equnr  FOR  equi-equnr OBLIGATORY,
+  s_udate  FOR  jcds-udate OBLIGATORY.
 SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
 PARAMETERS:
   p_deps TYPE tj02t-txt04 MODIF ID p1 DEFAULT 'DEPS',
@@ -763,13 +823,19 @@ AT SELECTION-SCREEN OUTPUT.
 START-OF-SELECTION .
 
   DATA(obj) =
-    NEW class_report( im_equi = s_equnr[]
-                      im_lidi = class_report=>get_stat( p_lidi )
-                      im_deps = class_report=>get_stat( p_deps ) ) .
+    NEW class_report( im_equi  = s_equnr[]
+                      im_udate = s_udate[]
+                      im_lidi  = class_report=>get_stat( p_lidi )
+                      im_deps  = class_report=>get_stat( p_deps ) ) .
   IF ( obj IS BOUND ) .
-    IF ( obj->is_valid_filter( ) ) .
-      obj->get_data( ) .
-    ENDIF.
+
+    IF ( obj->is_valid_filter( ) EQ abap_false ) .
+      MESSAGE i880(/yga/jump) .
+      LEAVE LIST-PROCESSING.
+    ENDIF .
+
+    obj->get_data( ) .
+
   ENDIF.
 
 end-OF-SELECTION .
