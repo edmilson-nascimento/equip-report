@@ -178,7 +178,7 @@ CLASS class_report IMPLEMENTATION .
 
     CALL FUNCTION 'SELECT_OPTIONS_RESTRICT'
       EXPORTING
-        restriction = ls_restrict .
+        restriction = ls_restrict.
 
   ENDMETHOD .
 
@@ -663,44 +663,9 @@ CLASS class_report IMPLEMENTATION .
     DATA:
       lt_status TYPE tab_status .
 
-    IF ( lines( me->gt_equi )  EQ 0 ) AND
+    IF ( lines( me->gt_equi )  EQ 0 ) OR
        ( lines( me->gt_udate ) EQ 0 ) .
       RETURN .
-    ENDIF .
-
-    " Filtro apenas por Data de modificação
-    IF ( lines( me->gt_equi )  EQ 0 ) AND
-       ( lines( me->gt_udate ) GT 0 ) .
-
-      TRY .
-          OPEN CURSOR WITH HOLD @me->gv_cursor FOR
-          SELECT objnr, stat, chgnr, usnam, udate, utime, tcode
-            FROM jcds
-           WHERE udate IN @me->gt_udate .
-          DO .
-            FETCH NEXT CURSOR @gv_cursor
-            APPENDING TABLE @lt_status PACKAGE SIZE @me->gc_package_size .
-
-            IF ( sy-subrc NE 0 ).
-              EXIT.
-            ENDIF.
-
-            DATA(message) = CONV char50( |{ lines( rt_result ) } Equip. recuperados...| ) .
-            me->progress( percent  = 10
-                          message  = message ).
-          ENDDO .
-          CLOSE CURSOR me->gv_cursor.
-        CATCH cx_sy_open_sql_db .
-      ENDTRY.
-
-*    me->gt_equi = VALUE range_t_equnr(
-*      FOR l IN im_data
-*      ( sign   = rsmds_c_sign-including
-*        option = rsmds_c_option-equal
-*        low    = l-equnr )
-*    ).
-*
-
     ENDIF .
 
     TRY .
@@ -718,7 +683,7 @@ CLASS class_report IMPLEMENTATION .
             EXIT.
           ENDIF.
 
-          message = |{ lines( rt_result ) } Equip. recuperados...| .
+          DATA(message) = CONV char50( |{ lines( rt_result ) } Equip. recuperados...| ) .
           me->progress( percent  = 10
                         message  = message ).
         ENDDO .
@@ -726,6 +691,40 @@ CLASS class_report IMPLEMENTATION .
         CLOSE CURSOR me->gv_cursor.
       CATCH cx_sy_open_sql_db .
     ENDTRY.
+
+    " Filtro apenas por Data de modificação
+
+    TRY .
+        OPEN CURSOR WITH HOLD @me->gv_cursor FOR
+        SELECT objnr, stat, chgnr, usnam, udate, utime, tcode
+          FROM jcds
+         WHERE udate IN @me->gt_udate .
+        DO .
+          FETCH NEXT CURSOR @gv_cursor
+          APPENDING TABLE @lt_status PACKAGE SIZE @me->gc_package_size .
+
+          IF ( sy-subrc NE 0 ).
+            EXIT.
+          ENDIF.
+
+*         DATA(message) = CONV char50( |{ lines( rt_result ) } Equip. recuperados...| ) .
+          message = |{ lines( rt_result ) } Equip. recuperados...| .
+          me->progress( percent  = 10
+                        message  = message ).
+        ENDDO .
+        CLOSE CURSOR me->gv_cursor.
+      CATCH cx_sy_open_sql_db .
+    ENDTRY.
+
+*    me->gt_equi = VALUE range_t_equnr(
+*      FOR l IN im_data
+*      ( sign   = rsmds_c_sign-including
+*        option = rsmds_c_option-equal
+*        low    = l-equnr )
+*    ).
+*
+
+
 
 
   ENDMETHOD .
@@ -867,7 +866,7 @@ end-OF-SELECTION .
       MESSAGE i000(>0) WITH 'Não existem dados para o filtro informado.'(m12) .
     ENDIF .
   ENDIF.
-  
-  
-  
+
+
+
 *
