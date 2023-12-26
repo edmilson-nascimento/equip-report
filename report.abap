@@ -673,14 +673,14 @@ CLASS class_report IMPLEMENTATION .
           CLOSE CURSOR me->gv_cursor.
         CATCH cx_sy_open_sql_db .
       ENDTRY.
-      
+
     me->gt_equi = VALUE range_t_equnr(
       FOR l IN im_data
       ( sign   = rsmds_c_sign-including
         option = rsmds_c_option-equal
         low    = l-equnr )
     ).
-      
+
 
     ENDIF .
 
