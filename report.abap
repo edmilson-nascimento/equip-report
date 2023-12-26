@@ -15,6 +15,8 @@ CLASS class_report DEFINITION .
 
     "! <p class="shorttext synchronized" lang="pt">Configuraçoes iniciais</p>
     CLASS-METHODS initial .
+    "! <p class="shorttext synchronized" lang="pt">Configuraçoes iniciais</p>
+    CLASS-METHODS screen_output .
     "! <p class="shorttext synchronized" lang="pt">Convert status para o valor interno</p>
     CLASS-METHODS get_stat
       IMPORTING
@@ -178,7 +180,34 @@ CLASS class_report IMPLEMENTATION .
 
     CALL FUNCTION 'SELECT_OPTIONS_RESTRICT'
       EXPORTING
-        restriction = ls_restrict.
+*       program                =                  " Program name (default SY-CPROG or SY-LDBPG)
+        restriction            = ls_restrict                 " Description of restrictions
+*       db                     = space            " X: Call using logical database
+      EXCEPTIONS
+        too_late               = 1                " Call is too late
+        repeated               = 2                " Multiple call using LDB or report
+        selopt_without_options = 3                " One of the select-options contains no valid options
+        selopt_without_signs   = 4                " One of the select-options does not have a valid sign
+        invalid_sign           = 5                " Invalid sign
+        empty_option_list      = 6                " One of the options lists is empty
+        invalid_kind           = 7                " One line has a KIND value unequal to A, B, or S
+        repeated_kind_a        = 8                " More than one line has KIND = 'A'
+        OTHERS                 = 9.
+    IF ( sy-subrc NE 0 ) .
+      RETURN .
+    ENDIF.
+
+  ENDMETHOD .
+
+
+  METHOD screen_output .
+
+    LOOP AT SCREEN .
+      IF ( screen-group1 EQ 'P1' ) .
+        screen-input = 0 .
+        MODIFY SCREEN .
+      ENDIF .
+    ENDLOOP.
 
   ENDMETHOD .
 
@@ -210,9 +239,10 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-    me->gt_equi = im_equi .
-    me->gv_lidi = im_lidi .
-    me->gv_deps = im_deps .
+    me->gt_equi  = im_equi .
+    me->gt_udate = im_udate .
+    me->gv_lidi  = im_lidi .
+    me->gv_deps  = im_deps .
 
   ENDMETHOD .
 
@@ -658,7 +688,10 @@ CLASS class_report IMPLEMENTATION .
         utime TYPE jcds-utime,
         tcode TYPE jcds-tcode,
       END OF ty_status,
-      tab_statys TYPE STANDARD TABLE OF ty_status.
+      tab_status TYPE STANDARD TABLE OF ty_status
+                 WITH DEFAULT KEY,
+      tab_objnr  TYPE STANDARD TABLE OF rng_objnr
+                 WITH DEFAULT KEY .
 
     DATA:
       lt_status TYPE tab_status .
@@ -692,20 +725,22 @@ CLASS class_report IMPLEMENTATION .
       CATCH cx_sy_open_sql_db .
     ENDTRY.
 
-    DATA(lt_equi_filter) = VALUE range_t_equnr(
-      FOR l IN rt_result
+    BREAK-POINT .
+
+    DATA(lt_equi) = VALUE tab_objnr(
+      FOR r IN rt_result
       ( sign   = rsmds_c_sign-including
         option = rsmds_c_option-equal
-        low    = l-equnr )
-    ).
-
+        low    = r-objnr ) ) .
 
     TRY .
         OPEN CURSOR WITH HOLD @me->gv_cursor FOR
+
         SELECT objnr, stat, chgnr, usnam, udate, utime, tcode
           FROM jcds
          WHERE udate IN @me->gt_udate
-           AND objnr IN @lt_equi_filter .
+           AND objnr IN @lt_equi .
+
         DO .
           FETCH NEXT CURSOR @gv_cursor
           APPENDING TABLE @lt_status PACKAGE SIZE @me->gc_package_size .
@@ -714,13 +749,14 @@ CLASS class_report IMPLEMENTATION .
             EXIT.
           ENDIF.
 
-*         DATA(message) = CONV char50( |{ lines( rt_result ) } Equip. recuperados...| ) .
           message = |{ lines( rt_result ) } Equip. recuperados...| .
-          me->progress( percent  = 10
-                        message  = message ).
+          me->progress( percent = 10 message = message ) .
         ENDDO .
+
         CLOSE CURSOR me->gv_cursor.
+
       CATCH cx_sy_open_sql_db .
+      CATCH cx_sy_dynamic_osql_semantics .
     ENDTRY.
 
 
@@ -833,6 +869,7 @@ INITIALIZATION .
   class_report=>initial( ) .
 
 AT SELECTION-SCREEN OUTPUT.
+  class_report=>screen_output( ) .
 
 
 START-OF-SELECTION .
