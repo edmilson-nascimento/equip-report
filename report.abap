@@ -161,6 +161,25 @@ CLASS class_report IMPLEMENTATION .
     ENDLOOP.
 
 
+    " Restrict select-options
+    DATA(ls_restrict) = VALUE sscr_restrict(
+        opt_list_tab = VALUE #(
+          ( name       = 'OBJECTKEY1'
+            options-bt = abap_on )
+        )
+        ass_tab      = VALUE #(
+          ( kind    = 'S'
+            name    = 'S_UDATE'
+            sg_main = 'I'
+            sg_addy = space
+            op_main = 'OBJECTKEY1' )
+        )
+    ).
+
+    CALL FUNCTION 'SELECT_OPTIONS_RESTRICT'
+      EXPORTING
+        restriction = ls_restrict .
+
   ENDMETHOD .
 
 
@@ -674,13 +693,13 @@ CLASS class_report IMPLEMENTATION .
         CATCH cx_sy_open_sql_db .
       ENDTRY.
 
-    me->gt_equi = VALUE range_t_equnr(
-      FOR l IN im_data
-      ( sign   = rsmds_c_sign-including
-        option = rsmds_c_option-equal
-        low    = l-equnr )
-    ).
-
+*    me->gt_equi = VALUE range_t_equnr(
+*      FOR l IN im_data
+*      ( sign   = rsmds_c_sign-including
+*        option = rsmds_c_option-equal
+*        low    = l-equnr )
+*    ).
+*
 
     ENDIF .
 
@@ -818,7 +837,7 @@ INITIALIZATION .
   class_report=>initial( ) .
 
 AT SELECTION-SCREEN OUTPUT.
-  class_report=>initial( ) .
+
 
 START-OF-SELECTION .
 
@@ -848,3 +867,7 @@ end-OF-SELECTION .
       MESSAGE i000(>0) WITH 'Não existem dados para o filtro informado.'(m12) .
     ENDIF .
   ENDIF.
+  
+  
+  
+*
