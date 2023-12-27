@@ -255,10 +255,6 @@ CLASS class_report IMPLEMENTATION .
 
   METHOD constructor .
 
-    IF ( lines( im_equi ) EQ 0 ) .
-      RETURN .
-    ENDIF .
-
     me->gt_equi  = im_equi .
     me->gt_udate = im_udate .
     me->gv_lidi  = im_lidi .
