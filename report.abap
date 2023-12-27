@@ -8,7 +8,6 @@ REPORT /yga/fix_equi_status.
 TABLES:
   equi, jcds .
 
-
 CLASS class_report DEFINITION .
 
   PUBLIC SECTION .
@@ -22,7 +21,7 @@ CLASS class_report DEFINITION .
       IMPORTING
         !im_stat         TYPE tj02t-txt04
       RETURNING
-        VALUE(rv_result) TYPE tj02t-istat .
+        VALUE(result) TYPE tj02t-istat .
     "! <p class="shorttext synchronized" lang="pt">Metodo construtor</p>
     METHODS constructor
       IMPORTING
@@ -129,17 +128,17 @@ CLASS class_report DEFINITION .
       IMPORTING
         !im_data         TYPE tab_bdcmsgcoll
       RETURNING
-        VALUE(rt_result) TYPE bapiret2_t .
+        VALUE(result) TYPE bapiret2_t .
     "! <p class="shorttext synchronized" lang="pt">Retorna dados de Equipamentos</p>
     METHODS get_equi
       RETURNING
-        VALUE(rt_result) TYPE tab_equi .
+        VALUE(result) TYPE tab_equi .
     "! <p class="shorttext synchronized" lang="pt">Retorna descrição de Equipamentos</p>
     METHODS get_desc
       IMPORTING
         !im_data         TYPE tab_equi
       RETURNING
-        VALUE(rt_result) TYPE tab_eqkt .
+        VALUE(result) TYPE tab_eqkt .
     "! <p class="shorttext synchronized" lang="pt">Retorna Status de Equipamentos</p>
     METHODS get_status
       IMPORTING
@@ -162,7 +161,6 @@ CLASS class_report IMPLEMENTATION .
       ENDIF .
     ENDLOOP.
 
-
     " Restrict select-options
     DATA(ls_restrict) = VALUE sscr_restrict(
         opt_list_tab = VALUE #(
@@ -180,9 +178,7 @@ CLASS class_report IMPLEMENTATION .
 
     CALL FUNCTION 'SELECT_OPTIONS_RESTRICT'
       EXPORTING
-*       program                =                  " Program name (default SY-CPROG or SY-LDBPG)
         restriction            = ls_restrict                 " Description of restrictions
-*       db                     = space            " X: Call using logical database
       EXCEPTIONS
         too_late               = 1                " Call is too late
         repeated               = 2                " Multiple call using LDB or report
@@ -226,7 +222,7 @@ CLASS class_report IMPLEMENTATION .
        AND txt04 EQ @im_stat .
     ENDSELECT .
 
-    rv_result = COND #( WHEN sy-subrc EQ 0
+    result = COND #( WHEN sy-subrc EQ 0
                         THEN ls_data-istat
                         ELSE space ) .
 
@@ -670,7 +666,7 @@ CLASS class_report IMPLEMENTATION .
     CALL FUNCTION 'CONVERT_BDCMSGCOLL_TO_BAPIRET2'
       TABLES
         imt_bdcmsgcoll = im_data
-        ext_return     = rt_result.
+        ext_return     = result.
 
   ENDMETHOD .
 
@@ -701,6 +697,14 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
+    " Filtro apenas por Equipamento
+    IF ( lines( me->gt_equi )  gt 0 ) and
+       ( lines( me->gt_udate ) EQ 0 ) .
+      RETURN .
+    ENDIF .
+
+
+
     TRY .
         OPEN CURSOR WITH HOLD @me->gv_cursor FOR
 
@@ -710,13 +714,13 @@ CLASS class_report IMPLEMENTATION .
 
         DO .
           FETCH NEXT CURSOR @gv_cursor
-          APPENDING TABLE @rt_result PACKAGE SIZE @me->gc_package_size .
+          APPENDING TABLE @result PACKAGE SIZE @me->gc_package_size .
 
           IF ( sy-subrc NE 0 ).
             EXIT.
           ENDIF.
 
-          DATA(message) = CONV char50( |{ lines( rt_result ) } Equip. recuperados...| ) .
+          DATA(message) = CONV char50( |{ lines( result ) } Equip. recuperados...| ) .
           me->progress( percent  = 10
                         message  = message ).
         ENDDO .
@@ -725,18 +729,12 @@ CLASS class_report IMPLEMENTATION .
       CATCH cx_sy_open_sql_db .
     ENDTRY.
 
-    BREAK-POINT .
 
-    DATA(lt_equi) = VALUE tab_objnr(
-      FOR r IN rt_result
+    DATA(lt_equi_filter) = VALUE ftr_ra_objnr(
+      FOR r IN result
       ( sign   = rsmds_c_sign-including
         option = rsmds_c_option-equal
         low    = r-objnr ) ) .
-
-    SELECT objnr, stat, chgnr, usnam, udate, utime, tcode
-      FROM jcds
-      INTO TABLE @lt_status
-     WHERE objnr IN @lt_equi .
 
     TRY .
         OPEN CURSOR WITH HOLD @me->gv_cursor FOR
@@ -744,7 +742,7 @@ CLASS class_report IMPLEMENTATION .
         SELECT objnr, stat, chgnr, usnam, udate, utime, tcode
           FROM jcds
          WHERE udate IN @me->gt_udate
-           AND objnr IN @lt_equi .
+           AND objnr IN @lt_equi_filter .
 
         DO .
           FETCH NEXT CURSOR @gv_cursor
@@ -754,7 +752,7 @@ CLASS class_report IMPLEMENTATION .
             EXIT.
           ENDIF.
 
-          message = |{ lines( rt_result ) } Equip. recuperados...| .
+          message = |{ lines( result ) } Equip. recuperados...| .
           me->progress( percent = 10 message = message ) .
         ENDDO .
 
@@ -763,6 +761,21 @@ CLASS class_report IMPLEMENTATION .
       CATCH cx_sy_open_sql_db .
       CATCH cx_sy_dynamic_osql_semantics .
     ENDTRY.
+
+    " Eliminar os itens que não estão dentro da "Data de Modf" de Status
+    lt_equi_filter = VALUE #(
+      FOR GROUPS log OF line IN lt_status
+        GROUP BY line-objnr ASCENDING
+        WITHOUT MEMBERS
+          ( sign   = rsmds_c_sign-including
+            option = rsmds_c_option-equal
+            low    = log  )  ) .
+
+    IF ( lines( lt_equi_filter ) EQ 0 ) .
+      RETURN .
+    ENDIF .
+
+    DELETE result WHERE objnr NOT IN lt_equi_filter .
 
 
   ENDMETHOD .
@@ -793,13 +806,13 @@ CLASS class_report IMPLEMENTATION .
 
         DO .
           FETCH NEXT CURSOR @me->gv_cursor
-          APPENDING TABLE @rt_result PACKAGE SIZE @me->gc_package_size .
+          APPENDING TABLE @result PACKAGE SIZE @me->gc_package_size .
 
           IF ( sy-subrc NE 0 ).
             EXIT.
           ENDIF.
 
-          DATA(message) = CONV char50( |{ lines( rt_result ) } Reg. desc. recuperados...| ) .
+          DATA(message) = CONV char50( |{ lines( result ) } Reg. desc. recuperados...| ) .
           me->progress( percent  = 50
                         message  = message ).
         ENDDO .
