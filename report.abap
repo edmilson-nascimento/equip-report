@@ -733,6 +733,11 @@ CLASS class_report IMPLEMENTATION .
         option = rsmds_c_option-equal
         low    = r-objnr ) ) .
 
+    SELECT objnr, stat, chgnr, usnam, udate, utime, tcode
+      FROM jcds
+      INTO TABLE @lt_status
+     WHERE objnr IN @lt_equi .
+
     TRY .
         OPEN CURSOR WITH HOLD @me->gv_cursor FOR
 
