@@ -19,7 +19,7 @@ CLASS class_report DEFINITION .
     "! <p class="shorttext synchronized" lang="pt">Convert status para o valor interno</p>
     CLASS-METHODS get_stat
       IMPORTING
-        !im_stat         TYPE tj02t-txt04
+        !im_stat      TYPE tj02t-txt04
       RETURNING
         VALUE(result) TYPE tj02t-istat .
     "! <p class="shorttext synchronized" lang="pt">Metodo construtor</p>
@@ -126,17 +126,29 @@ CLASS class_report DEFINITION .
     "! <p class="shorttext synchronized" lang="pt">Retorna as mensagens no formato BAPIRET2_T</p>
     METHODS convert_message
       IMPORTING
-        !im_data         TYPE tab_bdcmsgcoll
+        !im_data      TYPE tab_bdcmsgcoll
       RETURNING
         VALUE(result) TYPE bapiret2_t .
     "! <p class="shorttext synchronized" lang="pt">Retorna dados de Equipamentos</p>
     METHODS get_equi
       RETURNING
         VALUE(result) TYPE tab_equi .
+    "! <p class="shorttext synchronized" lang="pt">Retorna dados de Equipamentos</p>
+    METHODS get_equi_from_equipament
+      RETURNING
+        VALUE(result) TYPE tab_equi .
+    "! <p class="shorttext synchronized" lang="pt">Retorna dados de Equipamentos</p>
+    METHODS get_equi_from_date_modif
+      RETURNING
+        VALUE(result) TYPE ftr_ra_objnr .
+    "! <p class="shorttext synchronized" lang="pt">Retorna dados de Equipamentos</p>
+    METHODS get_equi_from_all
+      RETURNING
+        VALUE(result) TYPE tab_equi .
     "! <p class="shorttext synchronized" lang="pt">Retorna descrição de Equipamentos</p>
     METHODS get_desc
       IMPORTING
-        !im_data         TYPE tab_equi
+        !im_data      TYPE tab_equi
       RETURNING
         VALUE(result) TYPE tab_eqkt .
     "! <p class="shorttext synchronized" lang="pt">Retorna Status de Equipamentos</p>
@@ -698,7 +710,7 @@ CLASS class_report IMPLEMENTATION .
     ENDIF .
 
     " Filtro apenas por Equipamento
-    IF ( lines( me->gt_equi )  gt 0 ) and
+    IF ( lines( me->gt_equi )  GT 0 ) AND
        ( lines( me->gt_udate ) EQ 0 ) .
       RETURN .
     ENDIF .
@@ -777,9 +789,19 @@ CLASS class_report IMPLEMENTATION .
 
     DELETE result WHERE objnr NOT IN lt_equi_filter .
 
-
   ENDMETHOD .
 
+
+  METHOD get_equi_from_equipament .
+  ENDMETHOD .
+
+
+  METHOD get_equi_from_date_modif .
+  ENDMETHOD .
+
+
+  METHOD get_equi_from_all .
+  ENDMETHOD .
 
 
   METHOD get_desc .
