@@ -86,20 +86,32 @@ CLASS class_report DEFINITION .
         txt04 TYPE tj02t-txt04,
       END OF ty_status,
       tab_status TYPE STANDARD TABLE OF ty_status
-                  WITH DEFAULT KEY .
+                  WITH DEFAULT KEY,
+      BEGIN OF ty_status_modf,
+        objnr TYPE jcds-objnr,
+        stat  TYPE jcds-stat,
+        chgnr TYPE jcds-chgnr,
+        usnam TYPE jcds-usnam,
+        udate TYPE jcds-udate,
+        utime TYPE jcds-utime,
+        tcode TYPE jcds-tcode,
+      END OF ty_status_modf,
+      tab_status_modf TYPE STANDARD TABLE OF ty_status_modf
+                      WITH DEFAULT KEY .
 
     CONSTANTS:
       gc_package_size TYPE i VALUE 2500 .
 
     DATA:
-      salv_table  TYPE REF TO cl_salv_table,
-      gt_equi     TYPE range_t_equnr,
-      gt_udate    TYPE trg_date,
-      gv_lidi     TYPE tj02t-istat,
-      gv_deps     TYPE tj02t-istat,
-      gt_messages TYPE bapiret2_t,
-      gt_outtab   TYPE tab_out,
-      gv_cursor   TYPE cursor.
+      salv_table     TYPE REF TO cl_salv_table,
+      gt_equi        TYPE range_t_equnr,
+      gt_equi_filter TYPE ftr_ra_objnr,
+      gt_udate       TYPE trg_date,
+      gv_lidi        TYPE tj02t-istat,
+      gv_deps        TYPE tj02t-istat,
+      gt_messages    TYPE bapiret2_t,
+      gt_outtab      TYPE tab_out,
+      gv_cursor      TYPE cursor.
 
     "! <p class="shorttext synchronized" lang="pt">Mantem processamento apos ALV exibido</p>
     METHODS on_user_command
@@ -139,8 +151,8 @@ CLASS class_report DEFINITION .
         VALUE(result) TYPE tab_equi .
     "! <p class="shorttext synchronized" lang="pt">Retorna dados de Equipamentos</p>
     METHODS get_equi_from_date_modif
-      RETURNING
-        VALUE(result) TYPE ftr_ra_objnr .
+      CHANGING
+        !ch_data TYPE tab_equi OPTIONAL .
     "! <p class="shorttext synchronized" lang="pt">Retorna dados de Equipamentos</p>
     METHODS get_equi_from_all
       RETURNING
@@ -251,6 +263,8 @@ CLASS class_report IMPLEMENTATION .
     me->gt_udate = im_udate .
     me->gv_lidi  = im_lidi .
     me->gv_deps  = im_deps .
+
+    CLEAR me->gt_equi_filter .
 
   ENDMETHOD .
 
@@ -686,21 +700,6 @@ CLASS class_report IMPLEMENTATION .
 
   METHOD get_equi .
 
-    TYPES:
-      BEGIN OF ty_status,
-        objnr TYPE jcds-objnr,
-        stat  TYPE jcds-stat,
-        chgnr TYPE jcds-chgnr,
-        usnam TYPE jcds-usnam,
-        udate TYPE jcds-udate,
-        utime TYPE jcds-utime,
-        tcode TYPE jcds-tcode,
-      END OF ty_status,
-      tab_status TYPE STANDARD TABLE OF ty_status
-                 WITH DEFAULT KEY,
-      tab_objnr  TYPE STANDARD TABLE OF rng_objnr
-                 WITH DEFAULT KEY .
-
     DATA:
       lt_status TYPE tab_status .
 
@@ -709,13 +708,37 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-    " Filtro apenas por Equipamento
+    " Filtro apenas por Equipamento ✓
     IF ( lines( me->gt_equi )  GT 0 ) AND
        ( lines( me->gt_udate ) EQ 0 ) .
+      result = me->get_equi_from_equipament( ) .
       RETURN .
     ENDIF .
 
+    " Filtro apenas por Data de modificação ✓
+    IF ( lines( me->gt_equi )  EQ 0 ) AND
+       ( lines( me->gt_udate ) GT 0 ) .
+      me->get_equi_from_date_modif( ) .
+      result = me->get_equi_from_equipament( ) .
+      RETURN .
+    ENDIF .
 
+    " Filtro apenas por ambos filtros
+    IF ( lines( me->gt_equi )  GT 0 ) AND
+       ( lines( me->gt_udate ) GT 0 ) .
+      result = me->get_equi_from_equipament( ) .
+      me->get_equi_from_date_modif( CHANGING ch_data = result ) .
+      RETURN .
+    ENDIF .
+
+  ENDMETHOD .
+
+
+  METHOD get_equi_from_equipament .
+
+    IF ( lines( me->gt_equi )  EQ 0 ) .
+      RETURN .
+    ENDIF .
 
     TRY .
         OPEN CURSOR WITH HOLD @me->gv_cursor FOR
@@ -723,7 +746,6 @@ CLASS class_report IMPLEMENTATION .
         SELECT equnr, objnr
           FROM equi
          WHERE equnr IN @me->gt_equi .
-
         DO .
           FETCH NEXT CURSOR @gv_cursor
           APPENDING TABLE @result PACKAGE SIZE @me->gc_package_size .
@@ -732,7 +754,7 @@ CLASS class_report IMPLEMENTATION .
             EXIT.
           ENDIF.
 
-          DATA(message) = CONV char50( |{ lines( result ) } Equip. recuperados...| ) .
+          DATA(message) = CONV char50( |{ lines( result ) } { 'Equip. recuperados...'(m13) }| ) .
           me->progress( percent  = 10
                         message  = message ).
         ENDDO .
@@ -741,62 +763,107 @@ CLASS class_report IMPLEMENTATION .
       CATCH cx_sy_open_sql_db .
     ENDTRY.
 
-
-    DATA(lt_equi_filter) = VALUE ftr_ra_objnr(
-      FOR r IN result
-      ( sign   = rsmds_c_sign-including
-        option = rsmds_c_option-equal
-        low    = r-objnr ) ) .
-
-    TRY .
-        OPEN CURSOR WITH HOLD @me->gv_cursor FOR
-
-        SELECT objnr, stat, chgnr, usnam, udate, utime, tcode
-          FROM jcds
-         WHERE udate IN @me->gt_udate
-           AND objnr IN @lt_equi_filter .
-
-        DO .
-          FETCH NEXT CURSOR @gv_cursor
-          APPENDING TABLE @lt_status PACKAGE SIZE @me->gc_package_size .
-
-          IF ( sy-subrc NE 0 ).
-            EXIT.
-          ENDIF.
-
-          message = |{ lines( result ) } Equip. recuperados...| .
-          me->progress( percent = 10 message = message ) .
-        ENDDO .
-
-        CLOSE CURSOR me->gv_cursor.
-
-      CATCH cx_sy_open_sql_db .
-      CATCH cx_sy_dynamic_osql_semantics .
-    ENDTRY.
-
-    " Eliminar os itens que não estão dentro da "Data de Modf" de Status
-    lt_equi_filter = VALUE #(
-      FOR GROUPS log OF line IN lt_status
-        GROUP BY line-objnr ASCENDING
-        WITHOUT MEMBERS
-          ( sign   = rsmds_c_sign-including
-            option = rsmds_c_option-equal
-            low    = log  )  ) .
-
-    IF ( lines( lt_equi_filter ) EQ 0 ) .
-      RETURN .
-    ENDIF .
-
-    DELETE result WHERE objnr NOT IN lt_equi_filter .
-
-  ENDMETHOD .
-
-
-  METHOD get_equi_from_equipament .
   ENDMETHOD .
 
 
   METHOD get_equi_from_date_modif .
+
+    DATA:
+      lt_status TYPE tab_status_modf .
+
+    IF ( lines( me->gt_udate ) EQ 0 ) .
+      RETURN .
+    ENDIF .
+
+    IF ( ch_data IS SUPPLIED ) .
+
+      me->gt_equi_filter  = VALUE #(
+        FOR GROUPS e OF line_c IN ch_data
+          GROUP BY line_c-objnr ASCENDING
+          WITHOUT MEMBERS
+            ( sign   = rsmds_c_sign-including
+              option = rsmds_c_option-equal
+              low    = e ) ) .
+
+      TRY .
+          OPEN CURSOR WITH HOLD @me->gv_cursor FOR
+
+          SELECT objnr, stat, chgnr, usnam, udate, utime, tcode
+            FROM jcds
+           WHERE objnr IN @me->gt_equi_filter
+             AND udate IN @me->gt_udate .
+
+          DO .
+            FETCH NEXT CURSOR @gv_cursor
+            APPENDING TABLE @lt_status PACKAGE SIZE @me->gc_package_size .
+
+            IF ( sy-subrc NE 0 ).
+              EXIT.
+            ENDIF.
+
+            DATA(message) = CONV char50( |{ lines( lt_status ) } { 'St. Equip. recuperados...'(m14) }| ) .
+            me->progress( percent = 10 message = message ) .
+          ENDDO .
+
+          CLOSE CURSOR me->gv_cursor.
+
+        CATCH cx_sy_open_sql_db .
+        CATCH cx_sy_dynamic_osql_semantics .
+      ENDTRY.
+
+      " Eliminar os itens que não estão dentro da "Data de Modf" de Status
+      me->gt_equi_filter = VALUE #(
+        FOR GROUPS s OF line_s IN lt_status
+          GROUP BY line_s-objnr ASCENDING
+          WITHOUT MEMBERS
+            ( sign   = rsmds_c_sign-including
+              option = rsmds_c_option-equal
+              low    = s  )  ) .
+
+      IF ( lines( me->gt_equi_filter ) EQ 0 ) .
+        RETURN .
+      ENDIF .
+
+      DELETE ch_data WHERE objnr NOT IN me->gt_equi_filter .
+
+    ELSE .
+
+      TRY .
+          OPEN CURSOR WITH HOLD @me->gv_cursor FOR
+
+          SELECT objnr, stat, chgnr, usnam, udate, utime, tcode
+            FROM jcds
+           WHERE udate IN @me->gt_udate .
+
+          DO .
+            FETCH NEXT CURSOR @gv_cursor
+            APPENDING TABLE @lt_status PACKAGE SIZE @me->gc_package_size .
+
+            IF ( sy-subrc NE 0 ).
+              EXIT.
+            ENDIF.
+
+            message = |{ lines( lt_status ) } { 'St. Equip. recuperados...'(m14) }| .
+            me->progress( percent = 10 message = message ) .
+          ENDDO .
+
+          CLOSE CURSOR me->gv_cursor.
+
+        CATCH cx_sy_open_sql_db .
+        CATCH cx_sy_dynamic_osql_semantics .
+      ENDTRY.
+
+      " Preenchendo o primeiro filtro de Equipamento
+      me->gt_equi =  VALUE #(
+        FOR GROUPS eq OF line_e IN lt_status
+          GROUP BY line_e-objnr ASCENDING
+          WITHOUT MEMBERS
+            ( sign   = rsmds_c_sign-including
+              option = rsmds_c_option-equal
+              low    = |{ eq+2 }| )  ) .
+
+    ENDIF .
+
   ENDMETHOD .
 
 
@@ -895,8 +962,8 @@ ENDCLASS .
 
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
 SELECT-OPTIONS:
-  s_equnr  FOR  equi-equnr OBLIGATORY,
-  s_udate  FOR  jcds-udate OBLIGATORY.
+  s_equnr FOR equi-equnr,
+  s_udate FOR jcds-udate .
 SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
 PARAMETERS:
   p_deps TYPE tj02t-txt04 MODIF ID p1 DEFAULT 'DEPS',
