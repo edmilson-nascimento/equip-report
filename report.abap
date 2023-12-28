@@ -1,8 +1,7 @@
 *&---------------------------------------------------------------------*
 *& Report /yga/fix_equi_status
 *&---------------------------------------------------------------------*
-*&
-*&---------------------------------------------------------------------*
+
 REPORT /yga/fix_equi_status.
 
 TABLES:
@@ -61,7 +60,8 @@ CLASS class_report DEFINITION .
         eqktu TYPE eqkt-eqktu,
         sttxt TYPE itobattr-sttxt,
       END OF ty_out,
-      tab_out TYPE TABLE OF ty_out,
+      tab_out TYPE STANDARD TABLE OF ty_out
+              WITH DEFAULT KEY,
 
       BEGIN OF ty_equi,
         equnr TYPE equi-equnr,
@@ -153,10 +153,6 @@ CLASS class_report DEFINITION .
     METHODS get_equi_from_date_modif
       CHANGING
         !ch_data TYPE tab_equi OPTIONAL .
-    "! <p class="shorttext synchronized" lang="pt">Retorna dados de Equipamentos</p>
-    METHODS get_equi_from_all
-      RETURNING
-        VALUE(result) TYPE tab_equi .
     "! <p class="shorttext synchronized" lang="pt">Retorna descrição de Equipamentos</p>
     METHODS get_desc
       IMPORTING
@@ -282,10 +278,6 @@ CLASS class_report IMPLEMENTATION .
   METHOD get_data .
 
     CLEAR me->gt_outtab .
-
-    IF ( lines( me->gt_equi ) EQ 0 ) .
-      RETURN .
-    ENDIF .
 
     me->progress(
       EXPORTING percent  = 10
@@ -415,7 +407,7 @@ CLASS class_report IMPLEMENTATION .
 
         salv_table->display( ) .
 
-      CATCH cx_salv_msg .
+      CATCH cx_salv_msg .                               "#EC NO_HANDLER
 
     ENDTRY.
 
@@ -696,10 +688,7 @@ CLASS class_report IMPLEMENTATION .
 
   METHOD get_equi .
 
-    DATA:
-      lt_status TYPE tab_status .
-
-    IF ( lines( me->gt_equi )  EQ 0 ) OR
+    IF ( lines( me->gt_equi )  EQ 0 ) AND
        ( lines( me->gt_udate ) EQ 0 ) .
       RETURN .
     ENDIF .
@@ -719,7 +708,7 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-    " Filtro apenas por ambos filtros
+    " Filtro apenas por ambos filtros ✓
     IF ( lines( me->gt_equi )  GT 0 ) AND
        ( lines( me->gt_udate ) GT 0 ) .
       result = me->get_equi_from_equipament( ) .
@@ -755,8 +744,8 @@ CLASS class_report IMPLEMENTATION .
                         message  = message ).
         ENDDO .
 
-        CLOSE CURSOR me->gv_cursor.
-      CATCH cx_sy_open_sql_db .
+        CLOSE CURSOR me->gv_cursor.                     "#EC NO_HANDLER
+      CATCH cx_sy_open_sql_db .                         "#EC NO_HANDLER
     ENDTRY.
 
   ENDMETHOD .
@@ -803,8 +792,8 @@ CLASS class_report IMPLEMENTATION .
 
           CLOSE CURSOR me->gv_cursor.
 
-        CATCH cx_sy_open_sql_db .
-        CATCH cx_sy_dynamic_osql_semantics .
+        CATCH cx_sy_open_sql_db .                       "#EC NO_HANDLER
+        CATCH cx_sy_dynamic_osql_semantics .            "#EC NO_HANDLER
       ENDTRY.
 
       " Eliminar os itens que não estão dentro da "Data de Modf" de Status
@@ -845,9 +834,18 @@ CLASS class_report IMPLEMENTATION .
 
           CLOSE CURSOR me->gv_cursor.
 
-        CATCH cx_sy_open_sql_db .
-        CATCH cx_sy_dynamic_osql_semantics .
+        CATCH cx_sy_open_sql_db .                       "#EC NO_HANDLER
+        CATCH cx_sy_dynamic_osql_semantics .            "#EC NO_HANDLER
       ENDTRY.
+
+      " Filtro de equipamentos
+      DATA(lt_equipament_rule) = VALUE ftr_ra_objnr(
+        ( sign   = rsmds_c_sign-including
+          option = rsmds_c_option-contains_pattern
+          low    = 'IE*')
+      ).
+
+      DELETE lt_status WHERE objnr NOT IN lt_equipament_rule .
 
       " Preenchendo o primeiro filtro de Equipamento
       me->gt_equi =  VALUE #(
@@ -860,10 +858,6 @@ CLASS class_report IMPLEMENTATION .
 
     ENDIF .
 
-  ENDMETHOD .
-
-
-  METHOD get_equi_from_all .
   ENDMETHOD .
 
 
@@ -902,8 +896,8 @@ CLASS class_report IMPLEMENTATION .
                         message  = message ).
         ENDDO .
 
-        CLOSE CURSOR me->gv_cursor.
-      CATCH cx_sy_open_sql_db .
+        CLOSE CURSOR me->gv_cursor.                     "#EC NO_HANDLER
+      CATCH cx_sy_open_sql_db .                         "#EC NO_HANDLER
     ENDTRY.
 
   ENDMETHOD .
@@ -915,11 +909,11 @@ CLASS class_report IMPLEMENTATION .
       RETURN .
     ENDIF .
 
-    DATA(lr_equi) = VALUE range_t_equnr(
+    me->gt_equi_filter = VALUE #(
       FOR l IN im_data
       ( sign   = rsmds_c_sign-including
         option = rsmds_c_option-equal
-        low    = l-equnr )
+        low    = l-objnr )
     ).
 
     TRY .
@@ -930,7 +924,7 @@ CLASS class_report IMPLEMENTATION .
           FROM jest AS j
           LEFT JOIN tj02t AS t
             ON j~stat EQ t~istat
-         WHERE j~objnr IN @lr_equi
+         WHERE j~objnr IN @me->gt_equi_filter
            AND j~inact EQ @abap_false
            AND t~spras EQ @sy-langu .
 
@@ -948,7 +942,7 @@ CLASS class_report IMPLEMENTATION .
         ENDDO .
 
         CLOSE CURSOR @me->gv_cursor.
-      CATCH cx_sy_open_sql_db .
+      CATCH cx_sy_open_sql_db .                         "#EC NO_HANDLER
     ENDTRY.
 
   ENDMETHOD .
@@ -977,7 +971,7 @@ AT SELECTION-SCREEN OUTPUT.
 
 START-OF-SELECTION .
 
-  DATA(obj) =
+  DATA(obj) = ##NEEDED
     NEW class_report( im_equi  = s_equnr[]
                       im_udate = s_udate[]
                       im_lidi  = class_report=>get_stat( p_lidi )
